@@ -1,317 +1,258 @@
-import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken, 
-  onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  getDocs, 
-  query, 
-  doc,
-  deleteDoc
-} from 'firebase/firestore';
-import { 
-  Trophy, 
-  Settings, 
-  Download, 
-  CheckCircle2, 
-  AlertCircle,
-  BarChart3,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Target,
-  Zap,
-  Users,
-  Brain,
-  ExternalLink,
-  User as UserIcon 
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CFEB-FAP Baloncesto</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .btn-option:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-900">
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- Navegación -->
+        <nav class="bg-white border-b border-slate-200 py-4 px-6 sticky top-0 z-50 shadow-sm">
+            <div class="max-w-4xl mx-auto flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <div class="bg-orange-600 text-white p-1.5 rounded-lg">
+                        <i data-lucide="trophy" class="w-5 h-5"></i>
+                    </div>
+                    <span class="font-bold text-xl tracking-tight">CFEB-FAP <span class="text-orange-600 font-medium text-sm ml-1">BASKET</span></span>
+                </div>
+                <div id="auth-status" class="text-[10px] text-slate-400 flex items-center gap-1">
+                    <i data-lucide="shield-check" class="w-3 h-3 text-green-500"></i>
+                    Anónimo
+                </div>
+            </div>
+        </nav>
 
-// --- CONFIGURACIÓN FIREBASE ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'fap-basketball-app';
+        <!-- Contenedor Dinámico -->
+        <main id="main-content" class="flex-grow container mx-auto px-4 py-6 max-w-2xl"></main>
 
-// --- CONSTANTES ---
-const ZENODO_DOI = "10.5281/zenodo.18862811";
+        <footer class="py-6 text-center text-slate-400 text-[10px]">
+            <p>© 2026 Protocolo CFEB-FAP - Jorge Maroto Cuadrado</p>
+        </footer>
+    </div>
 
-const QUESTIONS = [
-  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES", inverted: false },
-  { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "ANTES", inverted: true },
-  { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", section: "ANTES", inverted: true },
-  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "ANTES", inverted: false },
-  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "ANTES", inverted: false },
-  { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", section: "DURANTE", inverted: true },
-  { id: 7, text: "Después de fallar, tardo en volver a concentrarme", section: "DURANTE", inverted: true },
-  { id: 8, text: "Evito participar en la siguiente jugada tras un error", section: "DURANTE", inverted: true },
-  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "DURANTE", inverted: false },
-  { id: 10, text: "El error baja mi intensidad defensiva", section: "DURANTE", inverted: true },
-  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "DURANTE", inverted: false },
-  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "ENTRENADOR", inverted: false },
-  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "ENTRENADOR", inverted: false },
-  { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", section: "ENTRENADOR", inverted: true },
-  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "ENTRENADOR", inverted: false },
-  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "DESPUÉS", inverted: true },
-  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "DESPUÉS", inverted: false },
-  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "DESPUÉS", inverted: true },
-  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "DESPUÉS", inverted: false },
-];
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-const SCALES = {
-  PREPARACION: { name: "Preparación Pre-partido", items: [1, 2, 3, 4, 5] },
-  REACTIVIDAD: { name: "Reactividad al Error (CCR1)", items: [6, 7, 8, 10, 16, 18] },
-  DISPONIBILIDAD: { name: "Disponibilidad Post-error (CCR2)", items: [4, 5, 9, 11, 17, 19] },
-  ENTRENADOR: { name: "Entrenador (Apoyo Funcional)", items: [12, 13, 14, 15] },
-};
+        // CONFIGURACIÓN
+        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = window.__app_id || 'cfeb-fap-v1';
 
-const getProfessionalAnalysis = (results) => {
-  const { REACTIVIDAD, DISPONIBILIDAD, ENTRENADOR } = results;
-  let profile = { title: "Perfil en Desarrollo", desc: "Gestión estándar con picos de frustración.", color: "text-blue-600" };
-  if (REACTIVIDAD > 3 && DISPONIBILIDAD > 3) profile = { title: "Perfil Resiliente", desc: "Alta recuperación. El error no condiciona su intensidad.", color: "text-green-600" };
-  else if (REACTIVIDAD < 1.5) profile = { title: "Perfil Alta Reactividad", desc: "El error genera bloqueo inmediato (CCR1).", color: "text-red-600" };
-  else if (DISPONIBILIDAD < 1.5) profile = { title: "Perfil de Evitación", desc: "Tiende a 'esconderse' tras el fallo.", color: "text-orange-600" };
+        // DATOS DEL TEST
+        const ITEMS = [
+            { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir" },
+            { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", invert: true },
+            { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", invert: true },
+            { id: 4, text: "Me siento con confianza para seguir jugando aunque falle" },
+            { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego" },
+            { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", invert: true },
+            { id: 7, text: "Después de fallar, tardo en volver a concentrarme", invert: true },
+            { id: 8, text: "Evito participar en la siguiente jugada tras un error", invert: true },
+            { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción" },
+            { id: 10, text: "El error baja mi intensidad defensiva", invert: true },
+            { id: 11, text: "Después de fallar, sigo disponible para recibir el balón" },
+            { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error" },
+            { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo" },
+            { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", invert: true },
+            { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores" },
+            { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", invert: true },
+            { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional" },
+            { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", invert: true },
+            { id: 19, text: "Soy capaz de aprender de los errores sin machacarme" }
+        ];
 
-  return {
-    profile,
-    insights: [
-      { icon: <Zap className="w-5 h-5" />, label: "Impacto en el Juego", text: REACTIVIDAD < 2 ? "Atención: Tus errores afectan tu defensa. Trabaja la regla de los '3 segundos'." : "Buen reenganche defensivo tras fallar." },
-      { icon: <Users className="w-5 h-5" />, label: "Relación con el Staff", text: ENTRENADOR > 3 ? "El feedback del staff es un regulador positivo para ti." : "Sientes presión excesiva ante las correcciones." },
-      { icon: <Target className="w-5 h-5" />, label: "Disponibilidad Ofensiva", text: DISPONIBILIDAD < 2.5 ? "Tiendes a evitar el balón tras un fallo. Pídelo en la siguiente jugada." : "Mantienes tu estatus de amenaza ofensiva." }
-    ]
-  };
-};
+        const SUBESCALAS = [
+            { name: "Prep. Pre-partido", ids: [1, 2, 3, 4, 5] },
+            { name: "Reactividad Error (CCR1)", ids: [6, 7, 8, 10, 16, 18] },
+            { name: "Disponibilidad Error (CCR2)", ids: [4, 5, 9, 11, 17, 19] },
+            { name: "Apoyo Entrenador", ids: [12, 13, 14, 15] }
+        ];
 
-const INTERPRETATION_RANGES = (score) => {
-  if (score >= 2.67) return { label: "Alto", color: "text-green-600", bg: "bg-green-50" };
-  if (score >= 1.34) return { label: "Medio", color: "text-yellow-600", bg: "bg-yellow-50" };
-  return { label: "Bajo", color: "text-red-600", bg: "bg-red-50" };
-};
+        let state = {
+            view: 'welcome', // welcome, test, results, admin
+            responses: {},
+            user: null
+        };
 
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [view, setView] = useState('welcome');
-  const [currentStep, setCurrentStep] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [adminData, setAdminData] = useState([]);
-  const [adminPass, setAdminPass] = useState("");
-
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
+        // RENDERIZADO
+        function render() {
+            const main = document.getElementById('main-content');
+            main.innerHTML = '';
+            
+            if (state.view === 'welcome') {
+                main.innerHTML = `
+                    <div class="fade-in text-center py-10">
+                        <div class="bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <i data-lucide="clipboard-check" class="w-10 h-10 text-orange-600"></i>
+                        </div>
+                        <h1 class="text-2xl font-bold mb-4">Cuestionario CFEB-FAP</h1>
+                        <p class="text-slate-600 mb-8 text-sm leading-relaxed">
+                            Este test es <strong>anónimo</strong>. Ayúdanos a entender cómo vives el error. 
+                            Recuerda: el fallo es parte del aprendizaje, no solo una derrota.
+                        </p>
+                        <button onclick="changeView('test')" class="w-full bg-orange-600 text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2">
+                            Empezar <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                        </button>
+                        <button onclick="changeView('admin')" class="mt-4 text-slate-400 text-xs flex items-center justify-center gap-1 mx-auto">
+                            <i data-lucide="lock" class="w-3 h-3"></i> Acceso Admin
+                        </button>
+                    </div>
+                `;
+            } else if (state.view === 'test') {
+                const answered = Object.keys(state.responses).length;
+                const progress = (answered / 19) * 100;
+                
+                main.innerHTML = `
+                    <div class="fade-in">
+                        <div class="mb-6 flex items-center justify-between">
+                            <span class="text-xs font-bold text-orange-600 uppercase tracking-widest">Pregunta ${answered + 1} de 19</span>
+                            <div class="w-32 bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-orange-600 h-full transition-all" style="width: ${progress}%"></div>
+                            </div>
+                        </div>
+                        <div id="question-card" class="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                            <p class="text-lg font-semibold text-slate-800 mb-8">${ITEMS[answered].text}</p>
+                            <div class="grid grid-cols-1 gap-3">
+                                ${[0,1,2,3,4].map(val => `
+                                    <button onclick="saveAnswer(${ITEMS[answered].id}, ${val})" class="btn-option w-full py-4 px-6 rounded-xl border-2 border-slate-100 text-left flex justify-between items-center hover:bg-orange-50 hover:border-orange-200 transition-all group">
+                                        <span class="font-bold text-slate-600 group-hover:text-orange-700">${val} - ${val === 0 ? 'Nada' : val === 4 ? 'Mucho' : 'Un poco'}</span>
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300"></i>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (state.view === 'results') {
+                const results = calculateResults(state.responses);
+                main.innerHTML = `
+                    <div class="fade-in">
+                        <div class="text-center mb-8">
+                            <i data-lucide="award" class="w-12 h-12 text-yellow-500 mx-auto mb-2"></i>
+                            <h2 class="text-2xl font-bold">Tu Perfil</h2>
+                        </div>
+                        <div class="space-y-4">
+                            ${results.map(res => `
+                                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                                    <div class="flex justify-between items-end mb-2">
+                                        <span class="text-sm font-bold text-slate-700">${res.name}</span>
+                                        <span class="text-xs font-bold px-2 py-0.5 rounded ${res.color} text-white">${res.level}</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                                        <div class="h-full ${res.color}" style="width: ${(res.score / 4) * 100}%"></div>
+                                    </div>
+                                    <div class="text-right mt-1 font-mono text-xs font-bold text-slate-400">${res.score} / 4.00</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="mt-8 bg-blue-50 p-4 rounded-xl text-xs text-blue-700 border border-blue-100">
+                            <strong>Nota:</strong> Los niveles se basan en la media de tus respuestas. El fallo es una oportunidad de ajuste táctico y emocional.
+                        </div>
+                        <button onclick="location.reload()" class="w-full mt-6 py-4 text-slate-400 font-bold">Finalizar</button>
+                    </div>
+                `;
+            } else if (state.view === 'admin') {
+                main.innerHTML = `
+                    <div class="fade-in">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-xl font-bold">Admin Panel</h2>
+                            <button onclick="exportCSV()" class="bg-green-600 text-white p-2 rounded-lg"><i data-lucide="download" class="w-5 h-5"></i></button>
+                        </div>
+                        <div id="data-list" class="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
+                            <p class="text-center text-slate-400 text-sm py-10 animate-pulse">Cargando base de datos...</p>
+                        </div>
+                        <button onclick="changeView('welcome')" class="w-full mt-6 py-4 bg-slate-800 text-white rounded-xl font-bold">Cerrar</button>
+                    </div>
+                `;
+                loadAdminData();
+            }
+            lucide.createIcons();
         }
-      } catch (error) { console.error(error); }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
 
-  const calculateResults = (dataAnswers) => {
-    const results = {};
-    Object.keys(SCALES).forEach(key => {
-      const scale = SCALES[key];
-      const scores = scale.items.map(id => {
-        const q = QUESTIONS.find(q => q.id === id);
-        const val = dataAnswers[id];
-        return q.inverted ? 4 - val : val;
-      });
-      results[key] = parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2));
-    });
-    return results;
-  };
+        // LÓGICA
+        window.changeView = (v) => { state.view = v; render(); };
 
-  const saveResults = async () => {
-    if (!user) return;
-    setLoading(true);
-    const results = calculateResults(answers);
-    try {
-      const dataCollection = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
-      await addDoc(dataCollection, { userId: user.uid, timestamp: new Date().toISOString(), answers, results });
-      setView('results');
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  };
+        window.saveAnswer = async (id, val) => {
+            state.responses[id] = val;
+            if (Object.keys(state.responses).length === 19) {
+                const results = calculateResults(state.responses);
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), {
+                    ts: new Date().toISOString(),
+                    raw: state.responses,
+                    results: results
+                });
+                state.view = 'results';
+            }
+            render();
+        };
 
-  const fetchAdminData = async () => {
-    if (adminPass !== "CFEB2026") { alert("Acceso denegado"); return; }
-    setLoading(true);
-    try {
-      const snapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      setAdminData(data);
-      setView('admin');
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  };
+        function calculateResults(raw) {
+            const proc = {};
+            ITEMS.forEach(it => proc[it.id] = it.invert ? (4 - raw[it.id]) : raw[it.id]);
+            
+            return SUBESCALAS.map(sub => {
+                const sum = sub.ids.reduce((a, b) => a + proc[b], 0);
+                const avg = sum / sub.ids.length;
+                let level = "Bajo", color = "bg-red-500";
+                if (avg > 1.33) { level = "Medio"; color = "bg-yellow-500"; }
+                if (avg > 2.66) { level = "Alto"; color = "bg-green-500"; }
+                return { name: sub.name, score: avg.toFixed(2), level, color };
+            });
+        }
 
-  if (view === 'welcome') {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans text-center">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
-          <div className="bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Trophy className="text-orange-600 w-10 h-10" />
-          </div>
-          <h1 className="text-2xl font-black text-slate-800 mb-1">CFEB-FAP</h1>
-          <p className="text-slate-500 text-sm mb-6 italic">"El fallo es parte del aprendizaje y no solo una derrota."</p>
-          
-          <button 
-            onClick={() => setView('survey')}
-            disabled={!user}
-            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black transition shadow-xl disabled:opacity-50 mb-6"
-          >
-            Comenzar Evaluación
-          </button>
+        async function loadAdminData() {
+            const q = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
+            const snap = await getDocs(q);
+            const list = document.getElementById('data-list');
+            list.innerHTML = '';
+            snap.forEach(doc => {
+                const d = doc.data();
+                list.innerHTML += `
+                    <div class="bg-white p-3 rounded-xl border border-slate-200 text-[10px] flex justify-between items-center shadow-sm">
+                        <span>${new Date(d.ts).toLocaleDateString()} - ID: ${doc.id.slice(0,5)}</span>
+                        <div class="flex gap-1 font-bold">
+                            ${d.results.map(r => `<span class="text-slate-400">${r.score}</span>`).join('|')}
+                        </div>
+                    </div>
+                `;
+            });
+        }
 
-          <div className="space-y-4 pt-6 border-t border-slate-50">
-            <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              <FileText className="w-3 h-3" /> Registro Científico
-            </div>
-            <a 
-              href={`https://doi.org/${ZENODO_DOI}`} 
-              target="_blank" 
-              className="inline-flex items-center px-3 py-1 bg-slate-100 rounded-full text-[10px] font-mono text-slate-500 hover:bg-slate-200 transition"
-            >
-              DOI: {ZENODO_DOI} <ExternalLink className="w-2 h-2 ml-1" />
-            </a>
-          </div>
+        window.exportCSV = async () => {
+            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
+            let csv = "ID,Fecha,Sub1,Sub2,Sub3,Sub4\n";
+            snap.forEach(doc => {
+                const d = doc.data();
+                csv += `${doc.id},${d.ts},${d.results[0].score},${d.results[1].score},${d.results[2].score},${d.results[3].score}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cfeb_fap_data.csv`;
+            a.click();
+        };
 
-          <div className="mt-8">
-            <input 
-              type="password" 
-              placeholder="Acceso Staff" 
-              className="w-full mb-2 p-3 text-sm border rounded-xl text-center bg-slate-50 outline-none"
-              onChange={(e) => setAdminPass(e.target.value)}
-            />
-            <button onClick={fetchAdminData} className="text-slate-400 text-xs hover:text-slate-600 flex items-center justify-center mx-auto">
-              <Settings className="w-3 h-3 mr-1" /> Panel de Control
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+        // INICIO
+        onAuthStateChanged(auth, (user) => {
+            state.user = user;
+            if (!user) signInAnonymously(auth);
+            render();
+        });
 
-  // Las vistas de survey, results y admin se mantienen con la lógica funcional corregida
-  if (view === 'survey') {
-    const q = QUESTIONS[currentStep];
-    return (
-      <div className="min-h-screen bg-white p-4 flex flex-col items-center">
-        <div className="max-w-xl w-full pt-10">
-          <div className="flex justify-between items-center mb-4">
-             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.section}</span>
-             <span className="text-xs font-bold text-slate-800">{currentStep + 1}/{QUESTIONS.length}</span>
-          </div>
-          <div className="w-full bg-slate-100 h-1 rounded-full mb-12">
-            <div className="bg-orange-500 h-full transition-all" style={{ width: `${((currentStep+1)/QUESTIONS.length)*100}%` }}></div>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-16 text-center leading-tight">{q.text}</h2>
-          <div className="flex justify-between max-w-sm mx-auto">
-            {[0, 1, 2, 3, 4].map(val => (
-              <button 
-                key={val} 
-                onClick={() => setAnswers({...answers, [q.id]: val})}
-                className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center text-lg font-black transition-all ${answers[q.id] === val ? 'border-orange-500 bg-orange-500 text-white' : 'border-slate-100 text-slate-300'}`}
-              >
-                {val}
-              </button>
-            ))}
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-400 font-black uppercase mt-4 max-w-sm mx-auto px-1">
-            <span>Nunca</span><span>Siempre</span>
-          </div>
-          <div className="flex justify-between gap-4 fixed bottom-10 left-0 right-0 max-w-xl mx-auto px-4">
-            <button onClick={() => setCurrentStep(Math.max(0, currentStep-1))} className={`p-4 ${currentStep===0?'invisible':''}`}><ChevronLeft/></button>
-            {currentStep < QUESTIONS.length - 1 ? (
-              <button disabled={answers[q.id]===undefined} onClick={() => setCurrentStep(currentStep+1)} className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-bold disabled:opacity-20">Siguiente</button>
-            ) : (
-              <button disabled={loading} onClick={saveResults} className="flex-1 py-4 bg-orange-600 text-white rounded-2xl font-bold">Ver Resultados</button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (view === 'results') {
-    const results = calculateResults(answers);
-    const analysis = getProfessionalAnalysis(results);
-    return (
-      <div className="min-h-screen bg-slate-50 p-4 md:p-8 flex flex-col items-center">
-        <div className="max-w-3xl w-full bg-white rounded-[2rem] shadow-2xl overflow-hidden">
-          <div className="bg-slate-900 p-8 text-white">
-            <h1 className="text-2xl font-black">Informe de Resiliencia</h1>
-            <p className="text-slate-400 text-sm">Basado en el Protocolo FAP (Zenodo: {ZENODO_DOI})</p>
-          </div>
-          <div className="p-8">
-            <div className={`p-6 rounded-2xl bg-slate-50 mb-8 border-l-4 ${analysis.profile.color.replace('text','border')}`}>
-              <h2 className={`text-xl font-black ${analysis.profile.color}`}>{analysis.profile.title}</h2>
-              <p className="text-slate-600 text-sm mt-1">{analysis.profile.desc}</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              {Object.keys(SCALES).map(key => {
-                const score = results[key];
-                const interp = INTERPRETATION_RANGES(score);
-                return (
-                  <div key={key} className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold text-slate-500 uppercase"><span>{SCALES[key].name}</span><span>{score}</span></div>
-                    <div className="h-1.5 bg-slate-100 rounded-full"><div className={`h-full ${interp.color.replace('text','bg')}`} style={{width:`${(score/4)*100}%`}}></div></div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex gap-4">
-              <button onClick={() => window.print()} className="flex-1 py-3 bg-slate-100 rounded-xl font-bold">Imprimir Informe</button>
-              <button onClick={() => window.location.reload()} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">Cerrar</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (view === 'admin') {
-    return (
-      <div className="min-h-screen bg-slate-50 p-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-2xl font-black">Panel Staff</h1>
-            <button onClick={() => setView('welcome')} className="text-sm font-bold text-slate-400">Volver</button>
-          </div>
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50">
-                <tr><th className="p-4">ID Atleta</th><th className="p-4">CCR1</th><th className="p-4">CCR2</th><th className="p-4">Staff</th></tr>
-              </thead>
-              <tbody>
-                {adminData.map(row => (
-                  <tr key={row.id} className="border-t border-slate-50">
-                    <td className="p-4 font-mono">...{row.userId.slice(-5)}</td>
-                    <td className="p-4">{row.results.REACTIVIDAD}</td>
-                    <td className="p-4">{row.results.DISPONIBILIDAD}</td>
-                    <td className="p-4">{row.results.ENTRENADOR}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-}
+    </script>
+</body>
+</html>              
