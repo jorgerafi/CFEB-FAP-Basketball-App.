@@ -1,213 +1,217 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="es">
 <head>
-<meta charset="UTF-8">
-<title>CFEB-FAP</title>
-
-<style>
-
-body{
-font-family:Arial;
-max-width:800px;
-margin:auto;
-padding:20px;
-}
-
-.question{
-margin-bottom:20px;
-padding-bottom:10px;
-border-bottom:1px solid #ddd;
-}
-
-</style>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CFEB-FAP | Análisis del Error</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .slide-up { animation: slideUp 0.4s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .tap-active:active { transform: scale(0.96); }
+    </style>
 </head>
+<body class="bg-slate-50 text-slate-900">
 
-<body>
+    <div id="app" class="min-h-screen flex flex-col max-w-lg mx-auto bg-white shadow-2xl">
+        <!-- Header -->
+        <header class="p-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md z-50">
+            <div class="flex items-center gap-3">
+                <div class="bg-orange-600 p-2 rounded-xl">
+                    <i data-lucide="basketball" class="w-6 h-6 text-white"></i>
+                </div>
+                <h1 class="font-extrabold text-lg">CFEB-FAP</h1>
+            </div>
+            <div id="connection-status" class="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-full">
+                <span class="w-2 h-2 bg-slate-400 rounded-full" id="status-dot"></span>
+                <span class="text-[9px] font-black text-slate-500" id="status-text">CARGANDO...</span>
+            </div>
+        </header>
 
-<h1>CFEB-FAP</h1>
+        <!-- Main -->
+        <main id="main-view" class="flex-grow p-6 flex flex-col"></main>
 
-<p>Cuestionario anónimo sobre respuesta al error en baloncesto</p>
+        <footer class="p-6 text-center border-t border-slate-50 bg-slate-50/20">
+            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Protocolo CFEB-FAP · Jorge Maroto</p>
+        </footer>
+    </div>
 
-<form id="test">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-<div class="question">
-<p>1. Antes del partido me siento preparado emocionalmente para competir</p>
-<input type="radio" name="q1" value="0">0
-<input type="radio" name="q1" value="1">1
-<input type="radio" name="q1" value="2">2
-<input type="radio" name="q1" value="3">3
-<input type="radio" name="q1" value="4">4
-</div>
+        // CONFIGURACIÓN DE SEGURIDAD
+        // Si no hay configuración real, usamos una estructura vacía para que no explote la app
+        const rawConfig = window.__firebase_config || '{"apiKey":"null"}';
+        let db, auth;
+        const appId = window.__app_id || 'basket-fap-v1';
 
-<div class="question">
-<p>2. Antes de jugar pienso mucho en no cometer errores</p>
-<input type="radio" name="q2" value="0">0
-<input type="radio" name="q2" value="1">1
-<input type="radio" name="q2" value="2">2
-<input type="radio" name="q2" value="3">3
-<input type="radio" name="q2" value="4">4
-</div>
+        try {
+            const firebaseConfig = JSON.parse(rawConfig);
+            if (firebaseConfig.apiKey !== "null") {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                document.getElementById('status-dot').className = "w-2 h-2 bg-green-500 rounded-full";
+                document.getElementById('status-text').innerText = "NUBE CONECTADA";
+            } else {
+                document.getElementById('status-text').innerText = "MODO LOCAL";
+            }
+        } catch (e) {
+            console.error("Error cargando Firebase:", e);
+            document.getElementById('status-text').innerText = "ERROR CONFIG";
+        }
 
-<div class="question">
-<p>3. Me siento nervioso o tenso antes de empezar el partido</p>
-<input type="radio" name="q3" value="0">0
-<input type="radio" name="q3" value="1">1
-<input type="radio" name="q3" value="2">2
-<input type="radio" name="q3" value="3">3
-<input type="radio" name="q3" value="4">4
-</div>
+        const ITEMS = [
+            { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "Pre" },
+            { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "Pre", inv: true },
+            { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", cat: "Pre", inv: true },
+            { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", cat: "Pre" },
+            { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", cat: "Pre" },
+            { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", cat: "CCR1", inv: true },
+            { id: 7, text: "Después de fallar, tardo en volver a concentrarme", cat: "CCR1", inv: true },
+            { id: 8, text: "Evito participar en la siguiente jugada tras un error", cat: "CCR1", inv: true },
+            { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", cat: "CCR2" },
+            { id: 10, text: "El error baja mi intensidad defensiva", cat: "CCR1", inv: true },
+            { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", cat: "CCR2" },
+            { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", cat: "Coach" },
+            { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", cat: "Coach" },
+            { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", cat: "Coach", inv: true },
+            { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", cat: "Coach" },
+            { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", cat: "CCR1", inv: true },
+            { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", cat: "CCR2" },
+            { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", cat: "CCR1", inv: true },
+            { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", cat: "CCR2" }
+        ];
 
-<div class="question">
-<p>4. Me siento con confianza para seguir jugando aunque falle</p>
-<input type="radio" name="q4" value="0">0
-<input type="radio" name="q4" value="1">1
-<input type="radio" name="q4" value="2">2
-<input type="radio" name="q4" value="3">3
-<input type="radio" name="q4" value="4">4
-</div>
+        let state = { view: 'home', currentIdx: 0, answers: {} };
 
-<div class="question">
-<p>5. Me siento disponible para asumir responsabilidades en el juego</p>
-<input type="radio" name="q5" value="0">0
-<input type="radio" name="q5" value="1">1
-<input type="radio" name="q5" value="2">2
-<input type="radio" name="q5" value="3">3
-<input type="radio" name="q5" value="4">4
-</div>
+        const render = () => {
+            const root = document.getElementById('main-view');
+            root.innerHTML = '';
 
-<div class="question">
-<p>6. Cuando cometo un error, me bloqueo emocionalmente</p>
-<input type="radio" name="q6" value="0">0
-<input type="radio" name="q6" value="1">1
-<input type="radio" name="q6" value="2">2
-<input type="radio" name="q6" value="3">3
-<input type="radio" name="q6" value="4">4
-</div>
+            if (state.view === 'home') {
+                root.innerHTML = `
+                    <div class="space-y-8 pt-10 slide-up text-center">
+                        <div class="bg-orange-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto border border-orange-100">
+                             <i data-lucide="brain-circuit" class="w-12 h-12 text-orange-600"></i>
+                        </div>
+                        <h2 class="text-3xl font-black text-slate-900">Mentalidad en Pista</h2>
+                        <p class="text-slate-500 text-sm px-4">Descubre tu perfil emocional tras el error. Anónimo y rápido.</p>
+                        <button onclick="window.go('quiz')" class="tap-active w-full bg-slate-900 text-white font-extrabold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3">
+                            Comenzar <i data-lucide="play" class="w-5 h-5"></i>
+                        </button>
+                        <button onclick="window.go('admin')" class="text-slate-300 text-[10px] font-bold uppercase tracking-widest">Panel Staff</button>
+                    </div>
+                `;
+            } else if (state.view === 'quiz') {
+                const item = ITEMS[state.currentIdx];
+                const progress = (state.currentIdx / ITEMS.length) * 100;
+                root.innerHTML = `
+                    <div class="slide-up">
+                        <div class="mb-8">
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-orange-600 h-full transition-all" style="width: ${progress}%"></div>
+                            </div>
+                        </div>
+                        <h3 class="text-2xl font-bold text-slate-800 mb-10 italic">"${item.text}"</h3>
+                        <div class="grid gap-3">
+                            ${[0,1,2,3,4].map(v => `
+                                <button onclick="window.save(${v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left font-bold flex justify-between items-center hover:border-orange-500">
+                                    <span>${v === 0 ? 'Nunca' : v === 4 ? 'Mucho' : v}</span>
+                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200"></i>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } else if (state.view === 'report') {
+                const results = window.calculate(state.answers);
+                const profile = window.interpret(results);
+                root.innerHTML = `
+                    <div class="slide-up space-y-6">
+                        <div class="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl">
+                            <h4 class="text-orange-500 font-black text-[10px] uppercase mb-2">Tu Perfil</h4>
+                            <p class="text-lg leading-relaxed italic mb-6">"${profile.text}"</p>
+                            <div class="space-y-4 pt-4 border-t border-white/10">
+                                ${results.map(r => `
+                                    <div class="flex justify-between items-center text-[10px]">
+                                        <span class="opacity-50">${r.name}</span>
+                                        <span class="${r.color}">${r.level}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div class="bg-orange-50 p-6 rounded-3xl border border-orange-100">
+                            <p class="text-xs text-orange-900 font-bold">${profile.action}</p>
+                        </div>
+                        <button onclick="location.reload()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl">Finalizar</button>
+                    </div>
+                `;
+            } else if (state.view === 'admin') {
+                root.innerHTML = `<div class="p-10 text-center"><p class="text-slate-400">Panel en construcción o sin conexión a la nube.</p><button onclick="window.go('home')" class="mt-4 text-orange-600 font-bold">Volver</button></div>`;
+            }
+            lucide.createIcons();
+        };
 
-<div class="question">
-<p>7. Después de fallar, tardo en volver a concentrarme</p>
-<input type="radio" name="q7" value="0">0
-<input type="radio" name="q7" value="1">1
-<input type="radio" name="q7" value="2">2
-<input type="radio" name="q7" value="3">3
-<input type="radio" name="q7" value="4">4
-</div>
+        window.go = (v) => { state.view = v; render(); };
+        window.save = async (v) => {
+            state.answers[ITEMS[state.currentIdx].id] = v;
+            if (state.currentIdx < ITEMS.length - 1) {
+                state.currentIdx++; render();
+            } else {
+                state.view = 'report'; render();
+                if (db) {
+                    try {
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), {
+                            ts: new Date().toISOString(),
+                            answers: state.answers,
+                            results: window.calculate(state.answers)
+                        });
+                    } catch (err) { console.error("Error guardando:", err); }
+                }
+            }
+        };
 
-<div class="question">
-<p>8. Evito participar en la siguiente jugada tras un error</p>
-<input type="radio" name="q8" value="0">0
-<input type="radio" name="q8" value="1">1
-<input type="radio" name="q8" value="2">2
-<input type="radio" name="q8" value="3">3
-<input type="radio" name="q8" value="4">4
-</div>
+        window.calculate = (ans) => {
+            const data = {};
+            ITEMS.forEach(it => data[it.id] = it.inv ? (4 - ans[it.id]) : ans[it.id]);
+            const groups = [
+                { name: "Preparación", ids: [1,2,3,4,5] },
+                { name: "Reactividad (CCR1)", ids: [6,7,8,10,16,18] },
+                { name: "Disponibilidad (CCR2)", ids: [4,5,9,11,17,19] }
+            ];
+            return groups.map(g => {
+                const avg = g.ids.reduce((a, b) => a + data[b], 0) / g.ids.length;
+                let level = "Bajo", color = "text-red-400";
+                if (avg > 1.33) { level = "Medio"; color = "text-orange-400"; }
+                if (avg > 2.66) { level = "Alto"; color = "text-green-400"; }
+                return { name: g.name, score: avg.toFixed(2), level, color };
+            });
+        };
 
-<div class="question">
-<p>9. Soy capaz de centrarme rápido en la siguiente acción</p>
-<input type="radio" name="q9" value="0">0
-<input type="radio" name="q9" value="1">1
-<input type="radio" name="q9" value="2">2
-<input type="radio" name="q9" value="3">3
-<input type="radio" name="q9" value="4">4
-</div>
+        window.interpret = (res) => {
+            const r1 = parseFloat(res[1].score);
+            const r2 = parseFloat(res[2].score);
+            if (r1 >= 2.67 && r2 >= 2.67) return { text: "Eres un jugador resiliente. El error es un dato técnico para ti, no un muro emocional.", action: "Sigue contagiando esa calma a tus compañeros." };
+            if (r1 < 1.34) return { text: "Tiendes al bloqueo tras el fallo. El error te saca del partido emocionalmente por momentos.", action: "Busca una acción física defensiva rápida para 'resetear' la mente." };
+            return { text: "Perfil en equilibrio. Sientes el error pero luchas por seguir disponible para el equipo.", action: "Confía en tu preparación previa para soltar antes el fallo." };
+        };
 
-<div class="question">
-<p>10. El error baja mi intensidad defensiva</p>
-<input type="radio" name="q10" value="0">0
-<input type="radio" name="q10" value="1">1
-<input type="radio" name="q10" value="2">2
-<input type="radio" name="q10" value="3">3
-<input type="radio" name="q10" value="4">4
-</div>
+        // Arrancar
+        if (auth) {
+            onAuthStateChanged(auth, (user) => {
+                if (!user) signInAnonymously(auth);
+                render();
+            });
+        } else {
+            render();
+        }
 
-<div class="question">
-<p>11. Después de fallar, sigo disponible para recibir el balón</p>
-<input type="radio" name="q11" value="0">0
-<input type="radio" name="q11" value="1">1
-<input type="radio" name="q11" value="2">2
-<input type="radio" name="q11" value="3">3
-<input type="radio" name="q11" value="4">4
-</div>
-
-<div class="question">
-<p>12. Las indicaciones del entrenador me ayudan después de un error</p>
-<input type="radio" name="q12" value="0">0
-<input type="radio" name="q12" value="1">1
-<input type="radio" name="q12" value="2">2
-<input type="radio" name="q12" value="3">3
-<input type="radio" name="q12" value="4">4
-</div>
-
-<div class="question">
-<p>13. El feedback del entrenador reduce mi malestar cuando fallo</p>
-<input type="radio" name="q13" value="0">0
-<input type="radio" name="q13" value="1">1
-<input type="radio" name="q13" value="2">2
-<input type="radio" name="q13" value="3">3
-<input type="radio" name="q13" value="4">4
-</div>
-
-<div class="question">
-<p>14. A veces las indicaciones del entrenador me generan más presión</p>
-<input type="radio" name="q14" value="0">0
-<input type="radio" name="q14" value="1">1
-<input type="radio" name="q14" value="2">2
-<input type="radio" name="q14" value="3">3
-<input type="radio" name="q14" value="4">4
-</div>
-
-<div class="question">
-<p>15. Me siento apoyado por el entrenador cuando cometo errores</p>
-<input type="radio" name="q15" value="0">0
-<input type="radio" name="q15" value="1">1
-<input type="radio" name="q15" value="2">2
-<input type="radio" name="q15" value="3">3
-<input type="radio" name="q15" value="4">4
-</div>
-
-<div class="question">
-<p>16. Después del partido sigo dándole vueltas a mis errores</p>
-<input type="radio" name="q16" value="0">0
-<input type="radio" name="q16" value="1">1
-<input type="radio" name="q16" value="2">2
-<input type="radio" name="q16" value="3">3
-<input type="radio" name="q16" value="4">4
-</div>
-
-<div class="question">
-<p>17. Me resulta fácil soltar el partido a nivel emocional</p>
-<input type="radio" name="q17" value="0">0
-<input type="radio" name="q17" value="1">1
-<input type="radio" name="q17" value="2">2
-<input type="radio" name="q17" value="3">3
-<input type="radio" name="q17" value="4">4
-</div>
-
-<div class="question">
-<p>18. Los errores afectan a mi estado de ánimo después del partido</p>
-<input type="radio" name="q18" value="0">0
-<input type="radio" name="q18" value="1">1
-<input type="radio" name="q18" value="2">2
-<input type="radio" name="q18" value="3">3
-<input type="radio" name="q18" value="4">4
-</div>
-
-<div class="question">
-<p>19. Soy capaz de aprender de los errores sin machacarme</p>
-<input type="radio" name="q19" value="0">0
-<input type="radio" name="q19" value="1">1
-<input type="radio" name="q19" value="2">2
-<input type="radio" name="q19" value="3">3
-<input type="radio" name="q19" value="4">4
-</div>
-
-<br>
-
-<button type="submit">Enviar respuestas</button>
-
-</form>
-
+    </script>
 </body>
-  </html>
+</html>
