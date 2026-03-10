@@ -26,36 +26,37 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- CONFIGURACIÓN CRÍTICA ---
-        // 1. Si usas Vercel, intenta leer de las variables de entorno.
-        // 2. Si lo subes a GitHub manualmente, rellena los datos de abajo.
+        // --- CONFIGURACIÓN DE FIREBASE ---
+        // Si despliegas en entornos que no inyectan __firebase_config,
+        // asegúrate de rellenar los datos de 'manualConfig'.
         
-        let firebaseConfig = {};
-        
-        try {
-            if (window.__firebase_config) {
-                firebaseConfig = JSON.parse(window.__firebase_config);
-            } else {
-                // SUSTITUYE ESTOS DATOS POR LOS DE TU CONSOLA DE FIREBASE (Project Settings -> General)
-                firebaseConfig = {
-                    apiKey: "TU_API_KEY_REAL_AQUÍ",
-                    authDomain: "tu-proyecto.firebaseapp.com",
-                    projectId: "tu-proyecto-id",
-                    storageBucket: "tu-proyecto.appspot.com",
-                    messagingSenderId: "tu-sender-id",
-                    appId: "tu-app-id"
-                };
-            }
-        } catch (e) {
-            console.error("Error al cargar la configuración de Firebase", e);
-        }
+        const manualConfig = {
+            apiKey: "TU_API_KEY_REAL_AQUÍ",
+            authDomain: "tu-proyecto.firebaseapp.com",
+            projectId: "tu-proyecto-id",
+            storageBucket: "tu-proyecto.appspot.com",
+            messagingSenderId: "tu-sender-id",
+            appId: "tu-app-id"
+        };
 
-        const appId = window.__app_id || 'fap-basketball-app';
+        const getFirebaseConfig = () => {
+            try {
+                if (typeof window.__firebase_config !== 'undefined' && window.__firebase_config) {
+                    return JSON.parse(window.__firebase_config);
+                }
+            } catch (e) {
+                console.warn("No se pudo parsear __firebase_config, usando configuración manual.");
+            }
+            return manualConfig;
+        };
+
+        const firebaseConfig = getFirebaseConfig();
+        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'fap-basketball-app';
 
         // --- ICONOS ---
         const TrophyIcon = () => (<svg className="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>);
 
-        // --- PREGUNTAS Y LÓGICA ---
+        // --- PREGUNTAS ---
         const QUESTIONS = [
             { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES", inverted: false },
             { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "ANTES", inverted: true },
@@ -94,23 +95,31 @@
             const [adminData, setAdminData] = React.useState([]);
             const [adminPass, setAdminPass] = React.useState("");
             const [errorMsg, setErrorMsg] = React.useState(null);
+            const [isSyncing, setIsSyncing] = React.useState(false);
 
             React.useEffect(() => {
-                const init = async () => {
+                const initFirebase = async () => {
                     try {
+                        // Verificación de API Key básica para evitar intentos nulos
+                        if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("TU_API_KEY")) {
+                            throw new Error("API Key no configurada.");
+                        }
+
                         const app = FB.initializeApp(firebaseConfig);
                         const _db = FB.getFirestore(app);
                         const _auth = FB.getAuth(app);
+                        
                         const cred = await FB.signInAnonymously(_auth);
                         setDb(_db);
                         setUser(cred.user);
                         setErrorMsg(null);
+                        console.log("Firebase conectado correctamente.");
                     } catch(e) { 
-                        console.error("Error Firebase:", e); 
-                        setErrorMsg("Error de conexión: Verifica tu API Key en el código.");
+                        console.error("Error detallado Firebase:", e); 
+                        setErrorMsg("Base de datos no conectada. Revisa la configuración en el código.");
                     }
                 };
-                init();
+                initFirebase();
             }, []);
 
             const calculateResults = (ans) => {
@@ -128,6 +137,7 @@
 
             const handleFinish = async () => {
                 const results = calculateResults(answers);
+                setIsSyncing(true);
                 if (db && user) {
                     try {
                         const coll = FB.collection(db, 'artifacts', appId, 'public', 'data', 'responses');
@@ -137,25 +147,38 @@
                             answers,
                             results
                         });
-                    } catch(e) { console.error("Error guardando:", e); }
+                        setView('results');
+                    } catch(e) { 
+                        console.error("Error guardando:", e);
+                        alert("Error al guardar en la nube. Revisa los permisos de Firestore.");
+                        setView('results'); // Mostramos resultados igualmente de forma local
+                    }
+                } else {
+                    setView('results');
                 }
-                setView('results');
+                setIsSyncing(false);
             };
 
             const loadAdmin = async () => {
                 if (adminPass !== "CFEB2026") return alert("Acceso denegado");
-                if (!db) return alert("La base de datos no está conectada.");
-                const coll = FB.collection(db, 'artifacts', appId, 'public', 'data', 'responses');
-                const snap = await FB.getDocs(coll);
-                setAdminData(snap.docs.map(d => ({id: d.id, ...d.data()})));
-                setView('admin');
+                if (!db) return alert("Error: La base de datos no respondió. Verifica la API Key.");
+                
+                try {
+                    const coll = FB.collection(db, 'artifacts', appId, 'public', 'data', 'responses');
+                    const snap = await FB.getDocs(coll);
+                    setAdminData(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                    setView('admin');
+                } catch (e) {
+                    console.error("Error al cargar admin:", e);
+                    alert("Error al leer de Firestore. ¿Has activado las reglas de seguridad?");
+                }
             };
 
             if (view === 'welcome') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50">
                     <div className="max-w-md w-full bg-white rounded-[3rem] shadow-2xl p-10 text-center border border-slate-100">
                         {errorMsg && (
-                            <div className="mb-4 p-3 bg-red-50 text-red-600 text-xs rounded-xl font-bold">
+                            <div className="mb-6 p-4 bg-red-50 text-red-600 text-[10px] rounded-2xl font-bold leading-tight uppercase tracking-wider">
                                 {errorMsg}
                             </div>
                         )}
@@ -164,10 +187,20 @@
                         </div>
                         <h1 className="text-3xl font-black text-slate-800 mb-2">CFEB-FAP</h1>
                         <p className="text-slate-500 text-sm mb-8 italic">"El fallo es parte del aprendizaje y no solo una derrota."</p>
-                        <button onClick={() => setView('survey')} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl mb-6">Comenzar Test</button>
+                        <button 
+                            onClick={() => setView('survey')} 
+                            className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl mb-6 hover:bg-black transition-all"
+                        >
+                            Comenzar Test
+                        </button>
                         
                         <div className="mt-10 pt-6 border-t border-slate-50">
-                            <input type="password" placeholder="Acceso Staff" className="w-full mb-3 p-3 border rounded-xl text-center bg-slate-100 text-xs outline-none" onChange={e => setAdminPass(e.target.value)} />
+                            <input 
+                                type="password" 
+                                placeholder="Acceso Staff" 
+                                className="w-full mb-3 p-3 border rounded-xl text-center bg-slate-100 text-xs outline-none focus:ring-2 focus:ring-orange-500" 
+                                onChange={e => setAdminPass(e.target.value)} 
+                            />
                             <button onClick={loadAdmin} className="text-slate-400 text-[10px] font-black tracking-widest uppercase hover:text-slate-600 transition">Panel Admin</button>
                         </div>
                     </div>
@@ -179,23 +212,44 @@
                 return (
                     <div className="min-h-screen bg-white p-6 flex flex-col items-center">
                         <div className="max-w-xl w-full pt-12">
-                            <div className="flex justify-between text-[11px] font-black text-slate-400 mb-4 uppercase"><span>{q.section}</span><span>{currentStep + 1}/{QUESTIONS.length}</span></div>
+                            <div className="flex justify-between text-[11px] font-black text-slate-400 mb-4 uppercase">
+                                <span>{q.section}</span>
+                                <span>{currentStep + 1}/{QUESTIONS.length}</span>
+                            </div>
                             <div className="w-full bg-slate-100 h-1 rounded-full mb-16 overflow-hidden">
                                 <div className="bg-orange-500 h-full transition-all" style={{width: `${((currentStep+1)/QUESTIONS.length)*100}%`}}></div>
                             </div>
                             <h2 className="text-2xl font-bold text-slate-900 mb-20 text-center">{q.text}</h2>
                             <div className="flex justify-between max-w-sm mx-auto mb-6">
                                 {[0, 1, 2, 3, 4].map(v => (
-                                    <button key={v} onClick={() => setAnswers({...answers, [q.id]: v})} className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === v ? 'border-orange-500 bg-orange-500 text-white scale-110 shadow-lg' : 'border-slate-100 text-slate-300'}`}>{v}</button>
+                                    <button 
+                                        key={v} 
+                                        onClick={() => setAnswers({...answers, [q.id]: v})} 
+                                        className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === v ? 'border-orange-500 bg-orange-500 text-white scale-110 shadow-lg' : 'border-slate-100 text-slate-300'}`}
+                                    >
+                                        {v}
+                                    </button>
                                 ))}
                             </div>
                             <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase max-w-sm mx-auto px-2"><span>Nunca</span><span>Siempre</span></div>
                             <div className="flex gap-4 fixed bottom-12 left-0 right-0 max-w-xl mx-auto px-6">
                                 <button onClick={() => setCurrentStep(Math.max(0, currentStep-1))} className={`p-4 bg-slate-50 rounded-2xl ${currentStep === 0 ? 'invisible' : ''}`}>←</button>
                                 {currentStep < QUESTIONS.length - 1 ? (
-                                    <button disabled={answers[q.id] === undefined} onClick={() => setCurrentStep(currentStep + 1)} className="flex-1 py-5 bg-slate-900 text-white rounded-2xl font-bold disabled:opacity-20 shadow-xl">Siguiente</button>
+                                    <button 
+                                        disabled={answers[q.id] === undefined} 
+                                        onClick={() => setCurrentStep(currentStep + 1)} 
+                                        className="flex-1 py-5 bg-slate-900 text-white rounded-2xl font-bold disabled:opacity-20 shadow-xl"
+                                    >
+                                        Siguiente
+                                    </button>
                                 ) : (
-                                    <button disabled={answers[q.id] === undefined} onClick={handleFinish} className="flex-1 py-5 bg-orange-600 text-white rounded-2xl font-bold shadow-xl">Ver Resultados</button>
+                                    <button 
+                                        disabled={answers[q.id] === undefined || isSyncing} 
+                                        onClick={handleFinish} 
+                                        className="flex-1 py-5 bg-orange-600 text-white rounded-2xl font-bold shadow-xl"
+                                    >
+                                        {isSyncing ? "Guardando..." : "Ver Resultados"}
+                                    </button>
                                 )}
                             </div>
                         </div>
@@ -232,23 +286,28 @@
                 <div className="min-h-screen bg-slate-50 p-6">
                     <div className="max-w-5xl mx-auto">
                         <div className="flex justify-between items-center mb-10">
-                            <h1 className="text-3xl font-black italic">Datos Estudio CFEB-FAP</h1>
-                            <button onClick={() => setView('welcome')} className="text-xs font-black text-slate-400 uppercase tracking-widest">Cerrar</button>
+                            <h1 className="text-3xl font-black italic text-slate-900">Datos Estudio CFEB-FAP</h1>
+                            <button onClick={() => setView('welcome')} className="text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-900">Volver</button>
                         </div>
                         <div className="bg-white rounded-[2rem] shadow-sm overflow-x-auto border border-slate-100 p-6">
                             <table className="w-full text-left text-sm">
                                 <thead>
-                                    <tr className="border-b text-slate-400"><th className="p-4 uppercase text-[10px] font-black">ID Atleta</th><th className="p-4 uppercase text-[10px] font-black">Timestamp</th><th className="p-4 uppercase text-[10px] font-black">CCR1 (Bloqueo)</th><th className="p-4 uppercase text-[10px] font-black">CCR2 (Reenganche)</th></tr>
+                                    <tr className="border-b text-slate-400">
+                                        <th className="p-4 uppercase text-[10px] font-black">ID Atleta</th>
+                                        <th className="p-4 uppercase text-[10px] font-black">Timestamp</th>
+                                        <th className="p-4 uppercase text-[10px] font-black">CCR1 (Bloqueo)</th>
+                                        <th className="p-4 uppercase text-[10px] font-black">CCR2 (Reenganche)</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     {adminData.length === 0 ? (
                                         <tr><td colSpan="4" className="p-10 text-center text-slate-400">No hay datos registrados aún.</td></tr>
                                     ) : adminData.map(d => (
                                         <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                            <td className="p-4 font-mono text-xs text-slate-400">...{d.userId.slice(-5)}</td>
-                                            <td className="p-4 text-xs">{new Date(d.timestamp).toLocaleString()}</td>
-                                            <td className="p-4 font-bold text-slate-700">{d.results.REACTIVIDAD}</td>
-                                            <td className="p-4 font-bold text-slate-700">{d.results.DISPONIBILIDAD}</td>
+                                            <td className="p-4 font-mono text-xs text-slate-400">...{d.userId?.slice(-5)}</td>
+                                            <td className="p-4 text-xs">{d.timestamp ? new Date(d.timestamp).toLocaleString() : 'N/A'}</td>
+                                            <td className="p-4 font-bold text-slate-700">{d.results?.REACTIVIDAD}</td>
+                                            <td className="p-4 font-bold text-slate-700">{d.results?.DISPONIBILIDAD}</td>
                                         </tr>
                                     ))}
                                 </tbody>
