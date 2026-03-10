@@ -1,430 +1,386 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, query } from 'firebase/firestore';
 import { 
-  getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken, 
-  onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  onSnapshot, 
-  query 
-} from 'firebase/firestore';
-import { 
-  ChevronRight, 
-  ChevronLeft, 
-  Send, 
+  ClipboardCheck, 
   BarChart3, 
+  Download, 
   ShieldCheck, 
-  UserCircle,
-  Clock,
-  MessageSquare,
-  Award,
-  Download
+  ArrowRight, 
+  Trophy, 
+  Info,
+  Lock
 } from 'lucide-react';
 
-// --- CONFIGURACIÓN FIREBASE ---
+// --- CONFIGURACIÓN DE FIREBASE ---
+// El entorno proporciona las claves automáticamente mediante __firebase_config
 const firebaseConfig = JSON.parse(__firebase_config);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'baloncesto-fap-study';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'cfeb-fap-app';
 
+// --- CONSTANTES DEL TEST ---
 const ITEMS = [
-  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES", invert: false },
+  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES" },
   { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "ANTES", invert: true },
   { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", section: "ANTES", invert: true },
-  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "ANTES", invert: false },
-  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "ANTES", invert: false },
+  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "ANTES" },
+  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "ANTES" },
   { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", section: "DURANTE", invert: true },
   { id: 7, text: "Después de fallar, tardo en volver a concentrarme", section: "DURANTE", invert: true },
   { id: 8, text: "Evito participar en la siguiente jugada tras un error", section: "DURANTE", invert: true },
-  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "DURANTE", invert: false },
+  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "DURANTE" },
   { id: 10, text: "El error baja mi intensidad defensiva", section: "DURANTE", invert: true },
-  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "DURANTE", invert: false },
-  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "ENTRENADOR", invert: false },
-  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "ENTRENADOR", invert: false },
+  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "DURANTE" },
+  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "ENTRENADOR" },
+  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "ENTRENADOR" },
   { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", section: "ENTRENADOR", invert: true },
-  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "ENTRENADOR", invert: false },
-  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "DESPUÉS", invert: true },
-  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "DESPUÉS", invert: false },
-  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "DESPUÉS", invert: true },
-  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "DESPUÉS", invert: false }
+  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "ENTRENADOR" },
+  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "DESPUES", invert: true },
+  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "DESPUES" },
+  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "DESPUES", invert: true },
+  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "DESPUES" },
 ];
 
-const SUBESCALAS_DEF = [
-  { nombre: "Preparación pre-partido", items: [1, 2, 3, 4, 5] },
-  { nombre: "Reactividad al error (CCR1)", items: [6, 7, 8, 10, 16, 18] },
-  { nombre: "Disponibilidad post-error (CCR2)", items: [4, 5, 9, 11, 17, 19] },
-  { nombre: "Entrenador (Apoyo funcional)", items: [12, 13, 14, 15] }
+const SUBESCALAS = [
+  { name: "Preparación Pre-partido", ids: [1, 2, 3, 4, 5] },
+  { name: "Reactividad al Error (CCR1)", ids: [6, 7, 8, 10, 16, 18] },
+  { name: "Disponibilidad Post-error (CCR2)", ids: [4, 5, 9, 11, 17, 19] },
+  { name: "Apoyo del Entrenador", ids: [12, 13, 14, 15] }
 ];
 
 export default function App() {
+  const [view, setView] = useState('welcome'); // welcome, test, results, admin
   const [user, setUser] = useState(null);
-  const [view, setView] = useState('welcome');
   const [responses, setResponses] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [allData, setAllData] = useState([]);
-  const [error, setError] = useState(null);
+  const [finalReport, setFinalReport] = useState(null);
 
-  // --- REGLA 3: Autenticación antes de consultas ---
+  // --- AUTENTICACIÓN ---
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error("Error de autenticación:", err);
-        setError("Error al conectar con el servidor de seguridad.");
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("Auth error", error);
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-    });
+    const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // --- REGLA 1 y 2: Rutas estrictas y sin consultas complejas ---
+  // --- CARGA DE DATOS PARA ADMIN ---
   useEffect(() => {
-    if (!user) return;
+    if (view === 'admin' && user) {
+      const q = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllData(data);
+      }, (err) => console.error("Firestore error", err));
+      return () => unsubscribe();
+    }
+  }, [view, user]);
 
-    // Ruta obligatoria: /artifacts/{appId}/public/data/{collectionName}
-    const responsesRef = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
-    
-    const unsubscribe = onSnapshot(
-      responsesRef, 
-      (snapshot) => {
-        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // Filtramos y ordenamos en memoria (JS) para evitar errores de índices de Firebase
-        const sortedDocs = docs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        setAllData(sortedDocs);
-      }, 
-      (err) => {
-        console.error("Error en tiempo real (Firestore):", err);
-        if (err.code === 'permission-denied') {
-          setError("Permiso denegado en la base de datos. Verificando configuración...");
-        }
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user]);
-
-  const handleResponse = (itemId, value) => {
-    setResponses(prev => ({ ...prev, [itemId]: value }));
-  };
-
-  const calculateSubscale = (itemIds) => {
-    const values = itemIds.map(id => {
-      const item = ITEMS.find(i => i.id === id);
-      const val = responses[id] || 0;
-      return item.invert ? 4 - val : val;
+  // --- LÓGICA DE CÁLCULO ---
+  const calculateScores = (rawResponses) => {
+    const processed = {};
+    ITEMS.forEach(item => {
+      const val = parseInt(rawResponses[item.id]);
+      processed[item.id] = item.invert ? (4 - val) : val;
     });
-    const sum = values.reduce((a, b) => a + b, 0);
-    return (sum / values.length).toFixed(2);
+
+    const scores = SUBESCALAS.map(sub => {
+      const vals = sub.ids.map(id => processed[id]);
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      return {
+        name: sub.name,
+        score: avg.toFixed(2),
+        level: avg <= 1.33 ? "Bajo" : avg <= 2.66 ? "Medio" : "Alto",
+        color: avg <= 1.33 ? "bg-red-500" : avg <= 2.66 ? "bg-yellow-500" : "bg-green-500"
+      };
+    });
+
+    return scores;
   };
 
-  const getInterpretation = (score) => {
-    if (score <= 1.33) return { label: "Bajo (Mejora prioritaria)", color: "text-red-600 bg-red-50" };
-    if (score <= 2.66) return { label: "Medio (Intervención selectiva)", color: "text-yellow-600 bg-yellow-50" };
-    return { label: "Alto (Fortaleza)", color: "text-green-600 bg-green-50" };
-  };
-
-  const submitSurvey = async () => {
-    if (!user) {
-      setError("No hay una sesión activa. Por favor, recarga la página.");
+  const handleFinish = async () => {
+    if (Object.keys(responses).length < 19) {
+      alert("Por favor, responde a todas las preguntas.");
       return;
     }
 
-    if (Object.keys(responses).length < ITEMS.length) {
-      setError("Por favor, responde todas las preguntas antes de enviar.");
-      return;
-    }
-
-    setLoading(true);
-    const results = {
+    setIsSubmitting(true);
+    const scores = calculateScores(responses);
+    
+    const payload = {
       timestamp: new Date().toISOString(),
-      userId: user.uid, // Guardamos el ID del usuario para trazabilidad anónima
-      rawResponses: responses,
-      subscales: SUBESCALAS_DEF.reduce((acc, sub) => {
-        acc[sub.nombre] = calculateSubscale(sub.items);
-        return acc;
-      }, {})
+      raw: responses,
+      results: scores,
+      userId: user?.uid || "anonymous"
     };
 
     try {
-      // Usar la ruta estricta para añadir el documento
-      const responsesRef = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
-      await addDoc(responsesRef, results);
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), payload);
+      setFinalReport(scores);
       setView('results');
-      setError(null);
     } catch (err) {
-      console.error("Error al guardar:", err);
-      setError("Error al guardar los datos en la nube.");
+      console.error(err);
+      alert("Error al guardar. Inténtalo de nuevo.");
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  const downloadCSV = () => {
+  const exportToCSV = () => {
     if (allData.length === 0) return;
-    const headers = ["Fecha", "Usuario ID", ...SUBESCALAS_DEF.map(s => s.nombre)];
-    const csvContent = [
-      headers.join(","),
-      ...allData.map(row => [
-        row.timestamp,
-        row.userId || "Anónimo",
-        ...SUBESCALAS_DEF.map(s => row.subscales[s.nombre])
-      ].join(","))
-    ].join("\n");
+    
+    let csv = "ID,Fecha,Sub1_Prep,Sub2_CCR1,Sub3_CCR2,Sub4_Entr\n";
+    allData.forEach(row => {
+      csv += `${row.id},${row.timestamp},${row.results[0].score},${row.results[1].score},${row.results[2].score},${row.results[3].score}\n`;
+    });
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.setAttribute('hidden', '');
     a.setAttribute('href', url);
-    a.setAttribute('download', `datos_estudio_fap_${new Date().toISOString().split('T')[0]}.csv`);
+    a.setAttribute('download', `cfeb_fap_export_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8">
-      <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
-        
-        {/* Header */}
-        <div className="bg-orange-600 p-6 text-white flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <Award size={24} /> CFEB-FAP Baloncesto
-            </h1>
-            <p className="text-orange-100 text-sm mt-1 tracking-tight">Instrumento de Análisis Funcional</p>
-          </div>
-          <div className="flex gap-2">
-            {view !== 'admin' && (
-              <button 
-                onClick={() => setView('admin')}
-                className="p-2 bg-orange-700/50 hover:bg-orange-500 rounded-lg transition-colors border border-orange-400/30"
-                title="Panel Investigador"
+  // --- COMPONENTES DE VISTA ---
+
+  const WelcomeView = () => (
+    <div className="max-w-2xl mx-auto text-center py-12 px-4">
+      <div className="mb-8 flex justify-center">
+        <div className="bg-orange-100 p-4 rounded-full">
+          <ClipboardCheck className="w-12 h-12 text-orange-600" />
+        </div>
+      </div>
+      <h1 className="text-3xl font-bold text-gray-900 mb-4">Cuestionario CFEB-FAP</h1>
+      <p className="text-gray-600 mb-8 leading-relaxed">
+        Este cuestionario es <strong>totalmente anónimo</strong>. Nos ayudará a entender cómo vives el error durante el juego. Recuerda: el fallo es parte del aprendizaje y no solo una derrota. Responde con total sinceridad.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-4 justify-center">
+        <button 
+          onClick={() => setView('test')}
+          className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 px-8 rounded-xl transition-all shadow-lg"
+        >
+          Empezar Test <ArrowRight className="w-5 h-5" />
+        </button>
+        <button 
+          onClick={() => setView('admin')}
+          className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-8 rounded-xl transition-all"
+        >
+          <Lock className="w-5 h-5" /> Admin
+        </button>
+      </div>
+    </div>
+  );
+
+  const TestView = () => (
+    <div className="max-w-3xl mx-auto py-8 px-4">
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-gray-800">Cuestionario de Autoinforme</h2>
+        <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-orange-500 transition-all duration-300" 
+            style={{ width: `${(Object.keys(responses).length / 19) * 100}%` }}
+          ></div>
+        </div>
+      </div>
+
+      {ITEMS.map((item, idx) => (
+        <div key={item.id} className="mb-10 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+          <p className="text-lg text-gray-800 mb-4 font-medium">
+            <span className="text-orange-600 mr-2">{idx + 1}.</span> {item.text}
+          </p>
+          <div className="grid grid-cols-5 gap-2">
+            {[0, 1, 2, 3, 4].map(val => (
+              <button
+                key={val}
+                onClick={() => setResponses(prev => ({ ...prev, [item.id]: val }))}
+                className={`py-3 rounded-lg text-sm font-bold transition-all border-2 ${
+                  responses[item.id] === val 
+                    ? 'bg-orange-600 border-orange-600 text-white' 
+                    : 'bg-white border-gray-200 text-gray-500 hover:border-orange-300 hover:bg-orange-50'
+                }`}
               >
-                <BarChart3 size={20} />
+                {val}
+                <div className="text-[10px] font-normal hidden sm:block">
+                  {val === 0 ? "Nada" : val === 4 ? "Mucho" : ""}
+                </div>
               </button>
-            )}
+            ))}
           </div>
         </div>
+      ))}
 
-        {/* Info Banner Anónimo */}
-        {!user && !error && (
-          <div className="bg-blue-50 p-2 text-center text-[10px] text-blue-600 font-bold uppercase tracking-widest border-b border-blue-100">
-            Conectando con el servidor seguro...
+      <button
+        onClick={handleFinish}
+        disabled={isSubmitting || Object.keys(responses).length < 19}
+        className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl transition-all ${
+          Object.keys(responses).length < 19
+            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            : 'bg-orange-600 hover:bg-orange-700 text-white'
+        }`}
+      >
+        {isSubmitting ? "Guardando..." : "Finalizar y Ver Resultados"}
+      </button>
+    </div>
+  );
+
+  const ResultsView = () => (
+    <div className="max-w-3xl mx-auto py-12 px-4">
+      <div className="text-center mb-10">
+        <Trophy className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+        <h2 className="text-3xl font-bold text-gray-900">Tu Perfil de Respuesta al Error</h2>
+        <p className="text-gray-600 mt-2 italic">"El fallo es parte del aprendizaje, no de la derrota."</p>
+      </div>
+
+      <div className="grid gap-6">
+        {finalReport.map((sub, i) => (
+          <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg text-gray-800">{sub.name}</h3>
+              <span className={`px-4 py-1 rounded-full text-xs font-bold text-white ${sub.color}`}>
+                Nivel {sub.level}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex-1 bg-gray-100 h-4 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full ${sub.color}`} 
+                  style={{ width: `${(parseFloat(sub.score) / 4) * 100}%` }}
+                ></div>
+              </div>
+              <span className="font-mono font-bold text-xl">{sub.score}</span>
+            </div>
           </div>
-        )}
+        ))}
+      </div>
 
-        {/* Views */}
-        <main className="p-6">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-xl text-sm border border-red-200 flex flex-col gap-2">
-              <div className="font-bold flex items-center gap-2 uppercase tracking-tight">
-                <ShieldCheck size={16} /> Atención
-              </div>
-              <p>{error}</p>
-              <button 
-                className="self-start text-xs underline font-bold" 
-                onClick={() => window.location.reload()}
-              >
-                Reintentar conexión
-              </button>
+      <div className="mt-10 bg-blue-50 p-6 rounded-2xl flex gap-4 border border-blue-100">
+        <Info className="w-6 h-6 text-blue-600 flex-shrink-0" />
+        <div className="text-sm text-blue-800">
+          <p className="font-bold mb-2">Interpretación General:</p>
+          <ul className="list-disc pl-4 space-y-1">
+            <li><strong>Alto (2.67-4.00):</strong> Es una fortaleza conductual. Sigue así.</li>
+            <li><strong>Medio (1.34-2.66):</strong> Nivel aceptable, pero hay margen de mejora.</li>
+            <li><strong>Bajo (0.00-1.33):</strong> Área prioritaria para trabajar con el entrenador.</li>
+          </ul>
+        </div>
+      </div>
+
+      <button 
+        onClick={() => window.location.reload()}
+        className="mt-8 w-full py-3 bg-gray-800 text-white rounded-xl font-bold hover:bg-gray-900 transition-all"
+      >
+        Cerrar Sesión
+      </button>
+    </div>
+  );
+
+  const AdminView = () => (
+    <div className="max-w-5xl mx-auto py-8 px-4">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Panel de Administración</h2>
+          <p className="text-gray-500">Visualización de respuestas anónimas ({allData.length})</p>
+        </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={exportToCSV}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold"
+          >
+            <Download className="w-4 h-4" /> Exportar CSV
+          </button>
+          <button 
+            onClick={() => setView('welcome')}
+            className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold"
+          >
+            Volver
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 text-gray-600 uppercase text-xs font-bold">
+              <tr>
+                <th className="px-6 py-4">Fecha</th>
+                <th className="px-6 py-4">ID Resp.</th>
+                <th className="px-6 py-4">Prep. Pre</th>
+                <th className="px-6 py-4">CCR1 (React.)</th>
+                <th className="px-6 py-4">CCR2 (Dispon.)</th>
+                <th className="px-6 py-4">Entrenador</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {allData.map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    {new Date(row.timestamp).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 text-xs font-mono text-gray-400">
+                    {row.id.substring(0, 8)}...
+                  </td>
+                  <td className="px-6 py-4 font-bold">{row.results[0].score}</td>
+                  <td className="px-6 py-4 font-bold">{row.results[1].score}</td>
+                  <td className="px-6 py-4 font-bold">{row.results[2].score}</td>
+                  <td className="px-6 py-4 font-bold">{row.results[3].score}</td>
+                </tr>
+              ))}
+              {allData.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="px-6 py-12 text-center text-gray-400 italic">
+                    Aún no hay respuestas registradas.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-gray-900">
+      <nav className="bg-white border-b border-gray-200 py-4 px-6 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="bg-orange-600 text-white p-1.5 rounded-lg">
+              <Trophy className="w-5 h-5" />
             </div>
-          )}
+            <span className="font-bold text-xl tracking-tight">CFEB-FAP <span className="text-orange-600">Basket</span></span>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            <ShieldCheck className="w-4 h-4 text-green-500" />
+            <span>Nube Encriptada</span>
+            <span>ID: {user?.uid?.substring(0, 5)}...</span>
+          </div>
+        </div>
+      </nav>
 
-          {view === 'welcome' && (
-            <div className="space-y-6 text-center py-8">
-              <div className="bg-orange-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto text-orange-600">
-                <ShieldCheck size={40} />
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-2xl font-bold tracking-tight">Estudio sobre el Error</h2>
-                <p className="text-slate-600 px-4 text-sm leading-relaxed">
-                  Tu participación es 100% anónima. Este test nos ayuda a entender cómo gestionar el fallo en la pista para mejorar el rendimiento colectivo.
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 pt-4">
-                <button 
-                  onClick={() => setView('survey')}
-                  disabled={!user}
-                  className={`
-                    font-bold py-4 px-8 rounded-xl transition-all shadow-lg
-                    ${!user ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-orange-600 text-white hover:bg-orange-700 hover:shadow-orange-200'}
-                  `}
-                >
-                  {user ? 'Empezar Test (19 ítems)' : 'Iniciando sesión segura...'}
-                </button>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                  ID Sesión: {user ? user.uid.substring(0, 8) : '---'}
-                </p>
-              </div>
-            </div>
-          )}
+      <main className="animate-in fade-in duration-500">
+        {view === 'welcome' && <WelcomeView />}
+        {view === 'test' && <TestView />}
+        {view === 'results' && <ResultsView />}
+        {view === 'admin' && <AdminView />}
+      </main>
 
-          {view === 'survey' && (
-            <div className="space-y-8 animate-in fade-in duration-500">
-              <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-black text-slate-400 uppercase">Progreso del Test</span>
-                  <span className="text-sm font-bold text-orange-600">
-                    {Object.keys(responses).length} de 19 completados
-                  </span>
-                </div>
-                <div className="text-2xl font-black text-slate-200">
-                   {Math.round((Object.keys(responses).length / ITEMS.length) * 100)}%
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {ITEMS.map((item) => (
-                  <div key={item.id} className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all">
-                    <p className="font-semibold mb-5 text-slate-800 leading-snug">
-                      <span className="text-orange-600 mr-2 tabular-nums">{item.id}.</span> {item.text}
-                    </p>
-                    <div className="flex justify-between items-center gap-2">
-                      {[0, 1, 2, 3, 4].map((val) => (
-                        <button
-                          key={val}
-                          onClick={() => handleResponse(item.id, val)}
-                          className={`
-                            flex-1 py-3 rounded-xl border-2 transition-all font-black text-lg
-                            ${responses[item.id] === val 
-                              ? 'bg-orange-600 border-orange-600 text-white scale-105 shadow-md' 
-                              : 'bg-slate-50 border-slate-100 text-slate-300 hover:border-orange-200 hover:text-orange-400'}
-                          `}
-                        >
-                          {val}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex justify-between mt-3 px-1 text-[9px] text-slate-400 uppercase font-black tracking-widest">
-                      <span>Nunca / Nada</span>
-                      <span>Siempre / Mucho</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-8 flex flex-col gap-4">
-                <button
-                  disabled={loading || Object.keys(responses).length < ITEMS.length}
-                  onClick={submitSurvey}
-                  className={`
-                    w-full py-5 rounded-2xl font-black text-lg flex items-center justify-center gap-3 transition-all shadow-xl
-                    ${loading || Object.keys(responses).length < ITEMS.length
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                      : 'bg-orange-600 text-white hover:bg-orange-700 hover:scale-[1.02]'}
-                  `}
-                >
-                  {loading ? 'Procesando datos...' : 'Finalizar y Guardar'} <Send size={20} />
-                </button>
-                <button 
-                  onClick={() => setView('welcome')} 
-                  className="text-slate-400 text-sm font-bold hover:text-slate-600 py-2"
-                >
-                  Volver al inicio
-                </button>
-              </div>
-            </div>
-          )}
-
-          {view === 'results' && (
-            <div className="space-y-6 animate-in zoom-in duration-300">
-              <div className="text-center space-y-2 py-4">
-                <div className="inline-block p-4 bg-green-50 text-green-600 rounded-full mb-2">
-                  <ShieldCheck size={40} />
-                </div>
-                <h2 className="text-2xl font-black tracking-tight text-slate-800">Test Finalizado</h2>
-                <p className="text-slate-500 text-sm font-medium">Aquí tienes tu perfil de respuesta al error</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                {SUBESCALAS_DEF.map((sub, i) => {
-                  const score = calculateSubscale(sub.items);
-                  const interpretation = getInterpretation(parseFloat(score));
-                  return (
-                    <div key={i} className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm">
-                      <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-bold text-slate-600 text-sm uppercase tracking-tight">{sub.nombre}</h3>
-                        <span className="text-3xl font-black text-orange-600 tabular-nums">{score}</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden mb-4">
-                        <div 
-                          className="bg-orange-500 h-full transition-all duration-1000 ease-out" 
-                          style={{ width: `${(score / 4) * 100}%` }}
-                        ></div>
-                      </div>
-                      <div className={`text-[10px] font-black px-3 py-1.5 rounded-full inline-block uppercase tracking-wider ${interpretation.color}`}>
-                        {interpretation.label}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="bg-slate-900 text-white p-6 rounded-2xl space-y-4 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10">
-                  <MessageSquare size={80} />
-                </div>
-                <h4 className="font-black text-xs uppercase tracking-[0.2em] text-orange-400 flex items-center gap-2">
-                   Feedback Psicológico
-                </h4>
-                <p className="text-sm text-slate-200 leading-relaxed font-medium italic">
-                  "Recuerda que el error no define tu calidad como jugador. Tu capacidad de 'soltar' el fallo y volver a estar disponible para el equipo es tu verdadera ventaja competitiva."
-                </p>
-              </div>
-
-              <button 
-                onClick={() => window.location.reload()}
-                className="w-full py-4 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors shadow-inner"
-              >
-                Cerrar y Salir
-              </button>
-            </div>
-          )}
-
-          {view === 'admin' && (
-            <div className="space-y-6 animate-in slide-in-from-right duration-300">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-                <h2 className="text-xl font-black flex items-center gap-2 text-slate-800">
-                  <BarChart3 className="text-orange-600" /> Registro del Equipo
-                </h2>
-                <button onClick={() => setView('welcome')} className="text-xs font-black text-slate-400 uppercase tracking-widest hover:text-orange-600">Volver</button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 text-center shadow-sm">
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Muestra (N)</p>
-                  <p className="text-4xl font-black text-slate-800 tabular-nums">{allData.length}</p>
-                </div>
-                <div className="p-5 bg-orange-50 rounded-2xl border border-orange-100 text-center shadow-sm flex flex-col justify-center">
-                  <p className="text-[10px] text-orange-400 font-black uppercase tracking-widest mb-1">Estado</p>
-                  <p className="text-xs font-black text-orange-600 uppercase">Recopilación Activa</p>
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-                <div className="max-h-72 overflow-y-auto">
-                  <table className="w-full text-[10px] text-left">
-                    <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 font-black uppercase text-slate-400 tracking-tighter">
-                      <tr>
-                        <th className="p-4">Fecha</th>
-                        <th className="p-4 text-center">PREP.</th>
-                        <th className="p-4 text-center">CCR1</th>
-                        <th className="p-4 text-center">CCR2</th>
-                        <th className="p-4 text-center">COACH</th>
-                      </tr>
-                    </thead
+      <footer className="py-8 text-center text-gray-400 text-xs mt-12">
+        <p>© 2026 Protocolo CFEB-FAP - Jorge Maroto Cuadrado</p>
+        <p className="mt-1">Implementado para CB Estudiantes</p>
+      </footer>
+    </div>
+  );
+}
