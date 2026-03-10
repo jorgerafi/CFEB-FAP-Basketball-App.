@@ -15,21 +15,13 @@ import {
 import { 
   Trophy, 
   Settings, 
-  CheckCircle2, 
   AlertCircle,
-  BarChart3,
-  ChevronLeft,
-  FileText,
-  Target,
-  Zap,
-  Users,
-  ExternalLink 
+  ChevronLeft
 } from 'lucide-react';
 
-// ==========================================
-// CONFIGURACIÓN MANUAL DE FIREBASE (CRUCIAL)
-// ==========================================
-// Copia y pega aquí los datos de tu consola de Firebase
+// ========================================================
+// 1. CONFIGURACIÓN MANUAL DE FIREBASE (RELLENA ESTO)
+// ========================================================
 const manualConfig = {
   apiKey: "TU_API_KEY_AQUÍ",
   authDomain: "tu-proyecto.firebaseapp.com",
@@ -39,27 +31,30 @@ const manualConfig = {
   appId: "tu-app-id"
 };
 
-// Intentamos obtener la config del entorno o usamos la manual
+// --- LÓGICA DE INICIALIZACIÓN SEGURA ---
 const getFirebaseConfig = () => {
-  try {
-    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-      return JSON.parse(__firebase_config);
-    }
-  } catch (e) {
-    console.warn("Usando configuración manual de Firebase.");
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    try { return JSON.parse(__firebase_config); } catch (e) { }
   }
   return manualConfig;
 };
 
 const firebaseConfig = getFirebaseConfig();
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+const isConfigValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== "TU_API_KEY_AQUÍ";
+
+// Inicialización condicional para evitar que la app "explote" si no hay config
+let auth, db;
+try {
+  const app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  console.error("Firebase no pudo inicializarse:", e);
+}
+
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'cfeb-fap-v1';
 
 // --- CONSTANTES ---
-const ZENODO_DOI = "10.5281/zenodo.18862811";
-
 const QUESTIONS = [
   { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES", inverted: false },
   { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "ANTES", inverted: true },
@@ -97,21 +92,17 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [adminData, setAdminData] = useState([]);
   const [adminPass, setAdminPass] = useState("");
-  const [dbError, setDbError] = useState(null);
+  const [dbError, setDbError] = useState(!isConfigValid);
 
   useEffect(() => {
+    if (!isConfigValid) return;
+    
     const initAuth = async () => {
-      // Validar si la config manual sigue vacía
-      if (firebaseConfig.apiKey === "TU_API_KEY_AQUÍ") {
-        setDbError("Falta configurar la API Key en el código (manualConfig).");
-        return;
-      }
       try {
         await signInAnonymously(auth);
-        setDbError(null);
       } catch (error) {
         console.error("Error Auth:", error);
-        setDbError("Error de conexión: Revisa tus credenciales de Firebase.");
+        setDbError(true);
       }
     };
     initAuth();
@@ -134,60 +125,55 @@ export default function App() {
   };
 
   const saveResults = async () => {
-    if (!user) return;
+    if (!isConfigValid) { setView('results'); return; }
     setLoading(true);
     const results = calculateResults(answers);
     try {
       const colPath = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
       await addDoc(colPath, { 
-        userId: user.uid, 
+        userId: user?.uid || 'anonymous', 
         timestamp: new Date().toISOString(), 
         results 
       });
       setView('results');
     } catch (e) { 
       console.error("Error guardando:", e);
-      alert("Error al guardar en la nube. Revisa las reglas de Firestore.");
-    } finally { 
-      setLoading(false); 
-    }
+      setView('results'); 
+    } finally { setLoading(false); }
   };
 
   const fetchAdminData = async () => {
     if (adminPass !== "CFEB2026") { alert("Contraseña incorrecta"); return; }
+    if (!isConfigValid) { alert("Configura Firebase primero"); return; }
     setLoading(true);
     try {
       const colPath = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
       const snapshot = await getDocs(colPath);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAdminData(data);
+      setAdminData(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setView('admin');
-    } catch (e) { 
-      console.error("Error cargando admin:", e);
-      alert("No se pudieron obtener datos. Revisa permisos en Firebase.");
-    } finally { 
-      setLoading(false); 
-    }
+    } catch (e) { alert("Error al conectar"); }
+    finally { setLoading(false); }
   };
 
+  // --- VISTA DE BIENVENIDA ---
   if (view === 'welcome') return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
       <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 border border-slate-100">
         {dbError && (
-          <div className="mb-6 p-4 bg-red-50 text-red-600 text-[10px] font-black uppercase rounded-2xl flex items-center gap-2">
-            <AlertCircle className="w-4 h-4" /> {dbError}
+          <div className="mb-6 p-4 bg-amber-50 text-amber-700 text-[11px] font-bold uppercase rounded-2xl flex items-center gap-2 border border-amber-100 leading-tight">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <span>Configuración pendiente: La base de datos no está vinculada.</span>
           </div>
         )}
-        <div className="bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-600">
-          <Trophy className="w-10 h-10" />
+        <div className="bg-orange-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-600">
+          <Trophy className="w-8 h-8" />
         </div>
-        <h1 className="text-3xl font-black text-slate-900 mb-2 italic tracking-tighter">CFEB-FAP</h1>
-        <p className="text-slate-500 text-sm mb-8 italic">"El fallo es parte del aprendizaje y no solo una derrota."</p>
+        <h1 className="text-3xl font-black text-slate-900 mb-2 italic tracking-tighter uppercase">CFEB-FAP</h1>
+        <p className="text-slate-400 text-sm mb-10 italic">Análisis Funcional del Error en Baloncesto</p>
         
         <button 
           onClick={() => setView('survey')}
-          disabled={!!dbError}
-          className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl hover:bg-black transition disabled:opacity-30"
+          className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl hover:bg-black transition-all active:scale-95"
         >
           Empezar Test
         </button>
@@ -199,35 +185,34 @@ export default function App() {
             className="w-full mb-3 p-4 bg-slate-100 rounded-xl text-center text-sm outline-none focus:ring-2 focus:ring-orange-500"
             onChange={(e) => setAdminPass(e.target.value)}
           />
-          <button onClick={fetchAdminData} className="text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-slate-900 flex items-center justify-center mx-auto gap-1">
-            <Settings className="w-3 h-3" /> {loading ? "Cargando..." : "Panel Admin"}
+          <button onClick={fetchAdminData} className="text-slate-300 text-[10px] font-black uppercase tracking-widest hover:text-slate-900 flex items-center justify-center mx-auto gap-1">
+            <Settings className="w-3 h-3" /> {loading ? "Cargando..." : "Acceso Admin"}
           </button>
         </div>
       </div>
     </div>
   );
 
+  // --- VISTA DE ENCUESTA ---
   if (view === 'survey') {
     const q = QUESTIONS[currentStep];
     return (
       <div className="min-h-screen bg-white p-6 flex flex-col items-center">
         <div className="max-w-xl w-full pt-10">
-          <div className="flex justify-between items-center mb-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <div className="flex justify-between items-center mb-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
             <span>{q.section}</span>
-            <span>{currentStep + 1}/{QUESTIONS.length}</span>
+            <span>{currentStep + 1} / {QUESTIONS.length}</span>
           </div>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full mb-16 overflow-hidden">
-            <div className="bg-orange-500 h-full transition-all" style={{ width: `${((currentStep+1)/QUESTIONS.length)*100}%` }}></div>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full mb-16">
+            <div className="bg-orange-500 h-full transition-all duration-500" style={{ width: `${((currentStep+1)/QUESTIONS.length)*100}%` }}></div>
           </div>
-          
-          <h2 className="text-2xl font-bold text-slate-900 mb-20 text-center leading-tight">{q.text}</h2>
-          
+          <h2 className="text-2xl font-bold text-slate-900 mb-20 text-center leading-snug">{q.text}</h2>
           <div className="flex justify-between max-w-sm mx-auto mb-4">
             {[0, 1, 2, 3, 4].map(val => (
               <button 
                 key={val} 
                 onClick={() => setAnswers({...answers, [q.id]: val})}
-                className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === val ? 'bg-orange-500 border-orange-500 text-white scale-110 shadow-lg' : 'border-slate-50 text-slate-200 hover:border-slate-100'}`}
+                className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === val ? 'bg-orange-500 border-orange-500 text-white scale-110 shadow-lg' : 'border-slate-50 text-slate-200 hover:border-slate-200 hover:text-slate-400'}`}
               >
                 {val}
               </button>
@@ -236,7 +221,6 @@ export default function App() {
           <div className="flex justify-between text-[10px] text-slate-300 font-black uppercase max-w-sm mx-auto px-2 mb-24">
             <span>Nunca</span><span>Siempre</span>
           </div>
-
           <div className="flex gap-4 fixed bottom-10 left-0 right-0 max-w-xl mx-auto px-6">
             <button onClick={() => setCurrentStep(Math.max(0, currentStep-1))} className={`p-5 bg-slate-50 rounded-2xl text-slate-400 ${currentStep === 0 ? 'invisible' : ''}`}>
               <ChevronLeft />
@@ -255,7 +239,7 @@ export default function App() {
                 onClick={saveResults} 
                 className="flex-1 py-5 bg-orange-600 text-white rounded-2xl font-bold shadow-xl"
               >
-                {loading ? "Guardando..." : "Finalizar y Ver Perfil"}
+                {loading ? "Guardando..." : "Ver Resultados"}
               </button>
             )}
           </div>
@@ -264,16 +248,17 @@ export default function App() {
     );
   }
 
+  // --- VISTA DE RESULTADOS ---
   if (view === 'results') {
     const results = calculateResults(answers);
     return (
       <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 border border-slate-100">
-          <h2 className="text-2xl font-black mb-8 italic tracking-tighter text-slate-900">Tu Perfil de Resiliencia</h2>
+        <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10">
+          <h2 className="text-2xl font-black mb-8 italic tracking-tighter text-slate-900 uppercase">Tu Perfil</h2>
           <div className="space-y-6 mb-10">
             {Object.keys(SCALES).map(key => (
               <div key={key}>
-                <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">
+                <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">
                   <span>{SCALES[key].name}</span>
                   <span className="text-slate-900">{results[key]}</span>
                 </div>
@@ -283,44 +268,39 @@ export default function App() {
               </div>
             ))}
           </div>
-          <button onClick={() => window.location.reload()} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold hover:scale-[1.02] transition">Finalizar</button>
+          <button onClick={() => window.location.reload()} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black transition">Finalizar</button>
         </div>
       </div>
     );
   }
 
+  // --- VISTA ADMIN ---
   if (view === 'admin') return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-5xl mx-auto bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+      <div className="max-w-5xl mx-auto bg-white rounded-[2rem] shadow-xl overflow-hidden">
         <div className="p-8 border-b border-slate-50 flex justify-between items-center">
-          <h2 className="text-xl font-black italic tracking-tighter">Panel de Resultados (Cloud)</h2>
-          <button onClick={() => setView('welcome')} className="text-xs font-black uppercase text-slate-400 tracking-widest">Cerrar</button>
+          <h2 className="text-xl font-black italic uppercase tracking-tighter">Registros Cloud</h2>
+          <button onClick={() => setView('welcome')} className="text-xs font-black uppercase text-slate-400">Cerrar</button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest border-b">
-                <th className="p-6">Atleta ID</th>
+                <th className="p-6">ID Atleta</th>
                 <th className="p-6">Fecha</th>
-                <th className="p-6 text-center">Reactividad (CCR1)</th>
-                <th className="p-6 text-center">Disponibilidad (CCR2)</th>
-                <th className="p-6 text-center">Entrenador</th>
+                <th className="p-6 text-center">CCR1</th>
+                <th className="p-6 text-center">CCR2</th>
               </tr>
             </thead>
             <tbody>
               {adminData.length === 0 ? (
-                <tr><td colSpan="5" className="p-20 text-center text-slate-400 italic">No hay registros guardados en Firestore.</td></tr>
+                <tr><td colSpan="4" className="p-20 text-center text-slate-300 italic">No hay datos en la nube.</td></tr>
               ) : adminData.map(d => (
-                <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                <tr key={d.id} className="border-b border-slate-50">
                   <td className="p-6 font-mono text-slate-400">...{d.userId?.slice(-5)}</td>
                   <td className="p-6 font-bold">{new Date(d.timestamp).toLocaleDateString()}</td>
-                  <td className="p-6 text-center">
-                    <span className={`px-3 py-1 rounded-full font-black ${d.results?.REACTIVIDAD > 2.5 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                      {d.results?.REACTIVIDAD}
-                    </span>
-                  </td>
-                  <td className="p-6 text-center font-black text-slate-900">{d.results?.DISPONIBILIDAD}</td>
-                  <td className="p-6 text-center font-bold text-slate-700">{d.results?.ENTRENADOR}</td>
+                  <td className="p-6 text-center">{d.results?.REACTIVIDAD}</td>
+                  <td className="p-6 text-center">{d.results?.DISPONIBILIDAD}</td>
                 </tr>
               ))}
             </tbody>
