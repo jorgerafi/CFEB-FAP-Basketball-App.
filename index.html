@@ -26,12 +26,14 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- CONFIGURACIÓN DE FIREBASE ---
-        // Si despliegas en entornos que no inyectan __firebase_config,
-        // asegúrate de rellenar los datos de 'manualConfig'.
+        // ==========================================
+        // CONFIGURACIÓN MANUAL DE FIREBASE (OBLIGATORIO)
+        // ==========================================
+        // REEMPLAZA LOS DATOS DE ABAJO CON LOS DE TU CONSOLA DE FIREBASE
+        // Si no rellenas esto, la app dirá "Base de datos no conectada".
         
         const manualConfig = {
-            apiKey: "TU_API_KEY_REAL_AQUÍ",
+            apiKey: "TU_API_KEY_AQUÍ",
             authDomain: "tu-proyecto.firebaseapp.com",
             projectId: "tu-proyecto-id",
             storageBucket: "tu-proyecto.appspot.com",
@@ -41,12 +43,14 @@
 
         const getFirebaseConfig = () => {
             try {
+                // Prioridad 1: Variable de entorno de Vercel/Ambiente
                 if (typeof window.__firebase_config !== 'undefined' && window.__firebase_config) {
                     return JSON.parse(window.__firebase_config);
                 }
             } catch (e) {
-                console.warn("No se pudo parsear __firebase_config, usando configuración manual.");
+                console.warn("No se pudo leer __firebase_config");
             }
+            // Prioridad 2: Configuración manual escrita arriba
             return manualConfig;
         };
 
@@ -100,23 +104,24 @@
             React.useEffect(() => {
                 const initFirebase = async () => {
                     try {
-                        // Verificación de API Key básica para evitar intentos nulos
+                        // Validación de seguridad para no intentar conectar con claves vacías
                         if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("TU_API_KEY")) {
-                            throw new Error("API Key no configurada.");
+                            throw new Error("API Key no válida. Debes editar el código con tus credenciales.");
                         }
 
                         const app = FB.initializeApp(firebaseConfig);
                         const _db = FB.getFirestore(app);
                         const _auth = FB.getAuth(app);
                         
+                        // Intentar login anónimo para asegurar que hay sesión activa
                         const cred = await FB.signInAnonymously(_auth);
                         setDb(_db);
                         setUser(cred.user);
                         setErrorMsg(null);
-                        console.log("Firebase conectado correctamente.");
+                        console.log("Conexión establecida con éxito.");
                     } catch(e) { 
-                        console.error("Error detallado Firebase:", e); 
-                        setErrorMsg("Base de datos no conectada. Revisa la configuración en el código.");
+                        console.error("Error Firebase:", e.message); 
+                        setErrorMsg("Error: Base de datos no conectada. Revisa la configuración del código.");
                     }
                 };
                 initFirebase();
@@ -149,9 +154,9 @@
                         });
                         setView('results');
                     } catch(e) { 
-                        console.error("Error guardando:", e);
-                        alert("Error al guardar en la nube. Revisa los permisos de Firestore.");
-                        setView('results'); // Mostramos resultados igualmente de forma local
+                        console.error("Error guardando datos:", e);
+                        alert("Error al guardar en Firebase. Revisa las reglas de seguridad de tu Firestore.");
+                        setView('results'); 
                     }
                 } else {
                     setView('results');
@@ -160,18 +165,22 @@
             };
 
             const loadAdmin = async () => {
-                if (adminPass !== "CFEB2026") return alert("Acceso denegado");
-                if (!db) return alert("Error: La base de datos no respondió. Verifica la API Key.");
+                if (adminPass !== "CFEB2026") return alert("Contraseña de Staff incorrecta");
+                if (!db) return alert("No hay conexión con la base de datos.");
                 
+                setIsSyncing(true);
                 try {
+                    // Ruta obligatoria según protocolo de seguridad
                     const coll = FB.collection(db, 'artifacts', appId, 'public', 'data', 'responses');
                     const snap = await FB.getDocs(coll);
-                    setAdminData(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                    const data = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                    setAdminData(data);
                     setView('admin');
                 } catch (e) {
-                    console.error("Error al cargar admin:", e);
-                    alert("Error al leer de Firestore. ¿Has activado las reglas de seguridad?");
+                    console.error("Error cargando datos admin:", e);
+                    alert("No se pudieron leer los datos. Asegúrate de que las reglas de Firestore permitan la lectura pública.");
                 }
+                setIsSyncing(false);
             };
 
             if (view === 'welcome') return (
@@ -185,11 +194,12 @@
                         <div className="bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-600">
                             <TrophyIcon />
                         </div>
-                        <h1 className="text-3xl font-black text-slate-800 mb-2">CFEB-FAP</h1>
+                        <h1 className="text-3xl font-black text-slate-800 mb-2 italic tracking-tighter">CFEB-FAP</h1>
                         <p className="text-slate-500 text-sm mb-8 italic">"El fallo es parte del aprendizaje y no solo una derrota."</p>
+                        
                         <button 
                             onClick={() => setView('survey')} 
-                            className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl mb-6 hover:bg-black transition-all"
+                            className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl mb-6 hover:bg-black transition-all active:scale-95"
                         >
                             Comenzar Test
                         </button>
@@ -197,16 +207,22 @@
                         <div className="mt-10 pt-6 border-t border-slate-50">
                             <input 
                                 type="password" 
-                                placeholder="Acceso Staff" 
-                                className="w-full mb-3 p-3 border rounded-xl text-center bg-slate-100 text-xs outline-none focus:ring-2 focus:ring-orange-500" 
+                                placeholder="Contraseña Admin" 
+                                className="w-full mb-3 p-4 border rounded-xl text-center bg-slate-100 text-sm outline-none focus:ring-2 focus:ring-orange-500" 
                                 onChange={e => setAdminPass(e.target.value)} 
                             />
-                            <button onClick={loadAdmin} className="text-slate-400 text-[10px] font-black tracking-widest uppercase hover:text-slate-600 transition">Panel Admin</button>
+                            <button 
+                                onClick={loadAdmin} 
+                                className="text-slate-400 text-[11px] font-black tracking-widest uppercase hover:text-slate-900 transition-colors"
+                            >
+                                {isSyncing ? "Cargando..." : "Panel Administración"}
+                            </button>
                         </div>
                     </div>
                 </div>
             );
 
+            // ... (El resto de las vistas survey, results y admin se mantienen igual para asegurar funcionalidad)
             if (view === 'survey') {
                 const q = QUESTIONS[currentStep];
                 return (
@@ -216,16 +232,16 @@
                                 <span>{q.section}</span>
                                 <span>{currentStep + 1}/{QUESTIONS.length}</span>
                             </div>
-                            <div className="w-full bg-slate-100 h-1 rounded-full mb-16 overflow-hidden">
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full mb-16 overflow-hidden">
                                 <div className="bg-orange-500 h-full transition-all" style={{width: `${((currentStep+1)/QUESTIONS.length)*100}%`}}></div>
                             </div>
-                            <h2 className="text-2xl font-bold text-slate-900 mb-20 text-center">{q.text}</h2>
+                            <h2 className="text-2xl font-bold text-slate-900 mb-20 text-center leading-tight">{q.text}</h2>
                             <div className="flex justify-between max-w-sm mx-auto mb-6">
                                 {[0, 1, 2, 3, 4].map(v => (
                                     <button 
                                         key={v} 
                                         onClick={() => setAnswers({...answers, [q.id]: v})} 
-                                        className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === v ? 'border-orange-500 bg-orange-500 text-white scale-110 shadow-lg' : 'border-slate-100 text-slate-300'}`}
+                                        className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === v ? 'border-orange-500 bg-orange-500 text-white scale-110 shadow-lg' : 'border-slate-100 text-slate-300 hover:border-slate-300'}`}
                                     >
                                         {v}
                                     </button>
@@ -262,21 +278,21 @@
                 return (
                     <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center">
                         <div className="max-w-2xl w-full bg-white rounded-[3rem] shadow-2xl p-10">
-                            <h1 className="text-3xl font-black mb-8 text-center">Informe de Resiliencia</h1>
+                            <h1 className="text-3xl font-black mb-8 text-center text-slate-900 italic tracking-tighter">Informe de Resiliencia</h1>
                             <div className="space-y-6">
                                 {Object.keys(SCALES).map(k => (
                                     <div key={k} className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
                                         <div className="flex justify-between mb-2">
-                                            <span className="text-xs font-black text-slate-400 uppercase">{SCALES[k].name}</span>
-                                            <span className="font-black text-xl">{results[k]}</span>
+                                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{SCALES[k].name}</span>
+                                            <span className="font-black text-xl text-slate-900">{results[k]}</span>
                                         </div>
-                                        <div className="h-2.5 bg-white rounded-full overflow-hidden border border-slate-200">
+                                        <div className="h-3 bg-white rounded-full overflow-hidden border border-slate-200">
                                             <div className="h-full bg-slate-900" style={{width: `${(results[k]/4)*100}%`}}></div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            <button onClick={() => window.location.reload()} className="w-full mt-10 py-5 bg-slate-900 text-white rounded-2xl font-bold">Cerrar</button>
+                            <button onClick={() => window.location.reload()} className="w-full mt-10 py-5 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black shadow-lg">Finalizar Sesión</button>
                         </div>
                     </div>
                 );
@@ -284,30 +300,43 @@
 
             if (view === 'admin') return (
                 <div className="min-h-screen bg-slate-50 p-6">
-                    <div className="max-w-5xl mx-auto">
+                    <div className="max-w-6xl mx-auto">
                         <div className="flex justify-between items-center mb-10">
-                            <h1 className="text-3xl font-black italic text-slate-900">Datos Estudio CFEB-FAP</h1>
-                            <button onClick={() => setView('welcome')} className="text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-900">Volver</button>
+                            <div>
+                                <h1 className="text-3xl font-black italic text-slate-900 tracking-tighter">Panel de Resultados</h1>
+                                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Total respuestas: {adminData.length}</p>
+                            </div>
+                            <button onClick={() => setView('welcome')} className="bg-white px-6 py-3 rounded-xl shadow-sm text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors border border-slate-100">Salir</button>
                         </div>
-                        <div className="bg-white rounded-[2rem] shadow-sm overflow-x-auto border border-slate-100 p-6">
+                        <div className="bg-white rounded-[2rem] shadow-xl overflow-x-auto border border-slate-100">
                             <table className="w-full text-left text-sm">
                                 <thead>
-                                    <tr className="border-b text-slate-400">
-                                        <th className="p-4 uppercase text-[10px] font-black">ID Atleta</th>
-                                        <th className="p-4 uppercase text-[10px] font-black">Timestamp</th>
-                                        <th className="p-4 uppercase text-[10px] font-black">CCR1 (Bloqueo)</th>
-                                        <th className="p-4 uppercase text-[10px] font-black">CCR2 (Reenganche)</th>
+                                    <tr className="bg-slate-50 text-slate-400 border-b">
+                                        <th className="p-5 uppercase text-[10px] font-black">ID Usuario</th>
+                                        <th className="p-5 uppercase text-[10px] font-black">Fecha / Hora</th>
+                                        <th className="p-5 uppercase text-[10px] font-black">CCR1 (Reactividad)</th>
+                                        <th className="p-5 uppercase text-[10px] font-black">CCR2 (Disponibilidad)</th>
+                                        <th className="p-5 uppercase text-[10px] font-black">Entrenador</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {adminData.length === 0 ? (
-                                        <tr><td colSpan="4" className="p-10 text-center text-slate-400">No hay datos registrados aún.</td></tr>
+                                        <tr><td colSpan="5" className="p-20 text-center text-slate-400 font-medium italic">No se han encontrado registros en la base de datos.</td></tr>
                                     ) : adminData.map(d => (
                                         <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                            <td className="p-4 font-mono text-xs text-slate-400">...{d.userId?.slice(-5)}</td>
-                                            <td className="p-4 text-xs">{d.timestamp ? new Date(d.timestamp).toLocaleString() : 'N/A'}</td>
-                                            <td className="p-4 font-bold text-slate-700">{d.results?.REACTIVIDAD}</td>
-                                            <td className="p-4 font-bold text-slate-700">{d.results?.DISPONIBILIDAD}</td>
+                                            <td className="p-5 font-mono text-[11px] text-slate-400">...{d.userId?.slice(-6)}</td>
+                                            <td className="p-5 text-xs font-semibold text-slate-600">{d.timestamp ? new Date(d.timestamp).toLocaleString() : '---'}</td>
+                                            <td className="p-5">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black ${parseFloat(d.results?.REACTIVIDAD) > 2.5 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                                    {d.results?.REACTIVIDAD}
+                                                </span>
+                                            </td>
+                                            <td className="p-5">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black ${parseFloat(d.results?.DISPONIBILIDAD) < 2 ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                    {d.results?.DISPONIBILIDAD}
+                                                </span>
+                                            </td>
+                                            <td className="p-5 font-bold text-slate-700">{d.results?.ENTRENADOR}</td>
                                         </tr>
                                     ))}
                                 </tbody>
