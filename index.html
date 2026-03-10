@@ -12,12 +12,12 @@
         .slide-up { animation: slideUp 0.4s ease-out; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         .tap-active:active { transform: scale(0.96); }
-        .progress-bar { transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 overflow-x-hidden">
+<body class="bg-slate-50 text-slate-900">
 
-    <div id="app" class="min-h-screen flex flex-col max-w-lg mx-auto bg-white shadow-2xl shadow-slate-200">
+    <div id="app" class="min-h-screen flex flex-col max-w-lg mx-auto bg-white shadow-2xl border-x border-slate-100">
         <!-- Cabecera -->
         <header class="p-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md z-50">
             <div class="flex items-center gap-3">
@@ -25,85 +25,78 @@
                     <i data-lucide="basketball" class="w-6 h-6 text-white"></i>
                 </div>
                 <div>
-                    <h1 class="font-extrabold text-lg leading-none tracking-tight">CFEB-FAP</h1>
-                    <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Análisis Funcional</p>
+                    <h1 class="font-extrabold text-lg leading-none uppercase tracking-tight">CFEB-FAP</h1>
+                    <p class="text-[9px] text-orange-600 font-black uppercase tracking-widest mt-1 italic">El fallo es aprendizaje</p>
                 </div>
             </div>
-            <div class="flex items-center gap-1.5 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
-                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                <span class="text-[9px] font-black text-green-700 tracking-wider">NUBE OK</span>
+            <div id="nav-btn" class="hidden">
+                <button onclick="window.go('home')" class="p-2 text-slate-400 hover:text-slate-600">
+                    <i data-lucide="home" class="w-5 h-5"></i>
+                </button>
             </div>
         </header>
 
-        <!-- Contenedor Dinámico -->
-        <main id="main-view" class="flex-grow p-6 flex flex-col"></main>
+        <!-- Contenido Principal -->
+        <main id="main-view" class="flex-grow p-6 flex flex-col overflow-y-auto no-scrollbar"></main>
 
-        <!-- Pie de página -->
+        <!-- Footer -->
         <footer class="p-6 text-center border-t border-slate-50 bg-slate-50/20">
-            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-loose">
-                Protocolo CFEB-FAP · Jorge Maroto Cuadrado<br>Vercel & Firebase Cloud Storage
+            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed">
+                Protocolo Jorge Maroto Cuadrado<br>CB Estudiantes · 2026
             </p>
         </footer>
     </div>
 
-    <!-- Firebase Integration -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Configuración Global
-        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = window.__app_id || 'cfeb-fap-final-deployment';
-
-        // 19 Ítems según Protocolo PDF
+    <script>
+        // Configuración de Ítems (Basado en el PDF)
         const ITEMS = [
-            { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "Pre" },
-            { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "Pre", inv: true },
-            { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", cat: "Pre", inv: true },
-            { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", cat: "Pre" },
-            { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", cat: "Pre" },
+            { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "PREP" },
+            { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "PREP", inv: true },
+            { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", cat: "PREP", inv: true },
+            { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", cat: "PREP" },
+            { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", cat: "PREP" },
             { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", cat: "CCR1", inv: true },
             { id: 7, text: "Después de fallar, tardo en volver a concentrarme", cat: "CCR1", inv: true },
             { id: 8, text: "Evito participar en la siguiente jugada tras un error", cat: "CCR1", inv: true },
             { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", cat: "CCR2" },
             { id: 10, text: "El error baja mi intensidad defensiva", cat: "CCR1", inv: true },
             { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", cat: "CCR2" },
-            { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", cat: "Coach" },
-            { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", cat: "Coach" },
-            { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", cat: "Coach", inv: true },
-            { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", cat: "Coach" },
+            { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", cat: "STAFF" },
+            { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", cat: "STAFF" },
+            { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", cat: "STAFF", inv: true },
+            { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", cat: "STAFF" },
             { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", cat: "CCR1", inv: true },
             { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", cat: "CCR2" },
             { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", cat: "CCR1", inv: true },
             { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", cat: "CCR2" }
         ];
 
-        let state = { view: 'home', currentIdx: 0, answers: {}, user: null };
+        let state = {
+            view: 'home',
+            currentIdx: 0,
+            answers: {},
+            results: null
+        };
 
         const render = () => {
             const root = document.getElementById('main-view');
+            const navBtn = document.getElementById('nav-btn');
             root.innerHTML = '';
+            navBtn.className = state.view === 'home' ? 'hidden' : 'block';
 
             if (state.view === 'home') {
                 root.innerHTML = `
-                    <div class="space-y-8 pt-8 slide-up text-center">
-                        <div class="bg-orange-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-inner border border-orange-100">
-                             <i data-lucide="brain-circuit" class="w-12 h-12 text-orange-600"></i>
+                    <div class="space-y-8 pt-10 slide-up text-center flex-grow flex flex-col justify-center">
+                        <div class="bg-orange-50 w-28 h-28 rounded-full flex items-center justify-center mx-auto border-2 border-orange-100 shadow-inner">
+                             <i data-lucide="brain-circuit" class="w-14 h-14 text-orange-600"></i>
                         </div>
-                        <div class="space-y-3">
-                            <h2 class="text-3xl font-black text-slate-900 leading-tight">Tu mentalidad tras el error.</h2>
-                            <p class="text-slate-400 text-sm px-4">Evaluación de la respuesta emocional y funcional ante el fallo en competición.</p>
+                        <div class="space-y-3 px-4">
+                            <h2 class="text-3xl font-black text-slate-900 tracking-tight leading-none uppercase italic">Análisis Funcional del Error</h2>
+                            <p class="text-slate-400 text-sm font-medium">Test de autoinforme para jugadores de baloncesto sobre gestión emocional en pista.</p>
                         </div>
-                        <div class="pt-6 space-y-4">
-                            <button onclick="window.go('quiz')" class="tap-active w-full bg-slate-900 text-white font-extrabold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3">
-                                Comenzar Test <i data-lucide="play-circle" class="w-6 h-6"></i>
-                            </button>
-                            <button onclick="window.go('admin')" class="w-full text-slate-300 font-bold py-2 text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
-                                <i data-lucide="lock" class="w-3 h-3"></i> Acceso Administrador
+                        <div class="pt-6">
+                            <button onclick="window.go('quiz')" class="tap-active w-full bg-slate-900 text-white font-extrabold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3 hover:bg-orange-600 transition-all">
+                                Iniciar Test CFEB-FAP <i data-lucide="play" class="w-5 h-5 fill-current"></i>
                             </button>
                         </div>
                     </div>
@@ -112,31 +105,35 @@
                 const item = ITEMS[state.currentIdx];
                 const progress = (state.currentIdx / ITEMS.length) * 100;
                 root.innerHTML = `
-                    <div class="slide-up flex flex-col h-full">
+                    <div class="slide-up">
                         <div class="mb-10">
                             <div class="flex justify-between items-end mb-3">
-                                <span class="text-[10px] font-black text-orange-600 uppercase tracking-widest">Ítem ${state.currentIdx + 1} de 19</span>
+                                <span class="text-[10px] font-black text-orange-600 uppercase tracking-widest">Pregunta ${state.currentIdx + 1} de 19</span>
                                 <span class="text-xs font-bold text-slate-300">${Math.round(progress)}%</span>
                             </div>
                             <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                                <div class="bg-orange-600 h-full progress-bar" style="width: ${progress}%"></div>
+                                <div class="bg-orange-600 h-full transition-all duration-300" style="width: ${progress}%"></div>
                             </div>
                         </div>
-                        
-                        <div class="flex-grow">
-                            <h3 class="text-2xl font-bold text-slate-800 leading-tight mb-12 italic">"${item.text}"</h3>
-                            
-                            <div class="grid gap-3">
-                                ${[0, 1, 2, 3, 4].map(v => `
-                                    <button onclick="window.save(${v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left flex justify-between items-center hover:border-orange-500 hover:bg-orange-50 transition-all">
-                                        <div class="flex items-center gap-4">
-                                            <span class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 font-bold text-sm">${v}</span>
-                                            <span class="font-bold text-slate-700">${v === 0 ? 'Nada' : v === 4 ? 'Mucho' : v === 2 ? 'A veces' : ''}</span>
-                                        </div>
-                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200"></i>
-                                    </button>
-                                `).join('')}
-                            </div>
+                        <h3 class="text-2xl font-bold text-slate-800 mb-12 italic leading-tight">"${item.text}"</h3>
+                        <div class="grid gap-3">
+                            ${[
+                                { v: 0, t: "Totalmente en desacuerdo" },
+                                { v: 1, t: "En desacuerdo" },
+                                { v: 2, t: "Neutral / A veces" },
+                                { v: 3, t: "De acuerdo" },
+                                { v: 4, t: "Totalmente de acuerdo" }
+                            ].map(opt => `
+                                <button onclick="window.save(${opt.v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-100 bg-white text-left font-bold flex justify-between items-center hover:border-orange-500 hover:bg-orange-50 transition-all">
+                                    <span class="text-slate-700">${opt.t}</span>
+                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200"></i>
+                                </button>
+                            `).join('')}
+                        </div>
+                        <div class="mt-8">
+                             <button onclick="window.prev()" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 ${state.currentIdx === 0 ? 'invisible' : ''}">
+                                <i data-lucide="arrow-left" class="w-3 h-3"></i> Pregunta anterior
+                             </button>
                         </div>
                     </div>
                 `;
@@ -144,30 +141,20 @@
                 const results = window.calculate(state.answers);
                 const profile = window.interpret(results);
                 root.innerHTML = `
-                    <div class="slide-up space-y-6">
-                        <div class="text-center py-4">
-                            <i data-lucide="check-circle" class="w-14 h-14 text-green-500 mx-auto mb-4"></i>
-                            <h2 class="text-2xl font-black text-slate-900 tracking-tight">Análisis Completado</h2>
-                            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Informe Emocional del Jugador</p>
-                        </div>
-
+                    <div class="slide-up space-y-6 pb-10">
                         <div class="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden">
-                            <div class="absolute top-0 right-0 p-8 opacity-10">
-                                <i data-lucide="award" class="w-20 h-20"></i>
-                            </div>
-                            <h4 class="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-4 flex items-center gap-2">
-                                <i data-lucide="user-check" class="w-3 h-3"></i> Perfil Narrativo
-                            </h4>
-                            <p class="text-base leading-relaxed mb-8 font-medium italic opacity-90">"${profile.text}"</p>
+                            <div class="absolute -top-10 -right-10 w-40 h-40 bg-orange-600/10 rounded-full blur-3xl"></div>
+                            <h4 class="text-orange-500 font-black text-[10px] uppercase tracking-widest mb-4">Perfil Interpretativo</h4>
+                            <p class="text-xl leading-relaxed italic mb-8 font-medium">"${profile.text}"</p>
                             
-                            <div class="space-y-5 border-t border-white/10 pt-6">
+                            <div class="space-y-5 pt-6 border-t border-white/10">
                                 ${results.map(r => `
                                     <div class="space-y-1.5">
-                                        <div class="flex justify-between text-[10px] font-bold uppercase tracking-wider">
-                                            <span class="opacity-40">${r.name}</span>
-                                            <span class="${r.color.replace('text-', 'text-')}">${r.level}</span>
+                                        <div class="flex justify-between items-center text-[10px] font-black uppercase">
+                                            <span class="opacity-40 tracking-wider">${r.name}</span>
+                                            <span class="${r.color}">${r.level} (${r.score})</span>
                                         </div>
-                                        <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                        <div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
                                             <div class="h-full ${r.bg}" style="width: ${(r.score/4)*100}%"></div>
                                         </div>
                                     </div>
@@ -175,132 +162,100 @@
                             </div>
                         </div>
 
-                        <div class="bg-orange-50 p-6 rounded-3xl border border-orange-100 space-y-3">
-                            <h4 class="font-black text-xs uppercase text-orange-800 flex items-center gap-2">
-                                <i data-lucide="zap" class="w-4 h-4"></i> Clave de Mejora
-                            </h4>
-                            <p class="text-xs text-orange-900 leading-relaxed font-bold">${profile.action}</p>
+                        <div class="bg-orange-50 p-6 rounded-3xl border border-orange-100 flex gap-4">
+                            <div class="bg-white p-2.5 rounded-xl h-fit border border-orange-200 shadow-sm text-orange-600">
+                                <i data-lucide="zap" class="w-5 h-5"></i>
+                            </div>
+                            <div class="space-y-1 text-left">
+                                <p class="text-[10px] font-black text-orange-800 uppercase tracking-widest">Recomendación Staff</p>
+                                <p class="text-xs text-orange-950 font-bold leading-relaxed">${profile.action}</p>
+                            </div>
                         </div>
 
-                        <button onclick="location.reload()" class="tap-active w-full bg-slate-900 text-white font-bold py-5 rounded-2xl mt-4 shadow-xl">Finalizar Evaluación</button>
-                    </div>
-                `;
-            } else if (state.view === 'admin') {
-                root.innerHTML = `
-                    <div class="slide-up space-y-4">
-                        <div class="flex justify-between items-center mb-6">
-                            <h2 class="text-xl font-black">Histórico Staff</h2>
-                            <button onclick="window.exportCSV()" class="bg-green-600 text-white p-2.5 rounded-xl shadow-lg">
-                                <i data-lucide="download" class="w-5 h-5"></i>
+                        <div class="grid grid-cols-2 gap-3 pt-4">
+                            <button onclick="window.go('home')" class="py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl text-sm">Cerrar</button>
+                            <button onclick="window.printReport()" class="py-4 bg-slate-900 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg">
+                                <i data-lucide="download" class="w-4 h-4"></i> Guardar PDF
                             </button>
                         </div>
-                        <div id="admin-list" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                            <p class="text-center py-20 text-slate-300 animate-pulse">Sincronizando con base de datos...</p>
-                        </div>
-                        <button onclick="window.go('home')" class="w-full py-4 text-slate-400 font-bold uppercase text-[10px] tracking-widest">Cerrar Sesión</button>
                     </div>
                 `;
-                window.loadData();
             }
             lucide.createIcons();
         };
 
-        // Router & Actions
-        window.go = (v) => { state.view = v; render(); };
-
-        window.save = async (val) => {
-            state.answers[ITEMS[state.currentIdx].id] = val;
+        window.go = (v) => { 
+            state.view = v; 
+            if(v === 'home') { state.currentIdx = 0; state.answers = {}; }
+            render(); 
+        };
+        
+        window.save = (v) => {
+            state.answers[ITEMS[state.currentIdx].id] = v;
             if (state.currentIdx < ITEMS.length - 1) {
-                state.currentIdx++;
-                render();
+                state.currentIdx++; render();
             } else {
-                state.view = 'report';
-                render();
-                const scores = window.calculate(state.answers);
-                try {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), {
-                        createdAt: new Date().toISOString(),
-                        scores: scores,
-                        answers: state.answers
-                    });
-                } catch(e) { console.error(e); }
+                state.view = 'report'; render();
+            }
+        };
+
+        window.prev = () => {
+            if (state.currentIdx > 0) {
+                state.currentIdx--; render();
             }
         };
 
         window.calculate = (ans) => {
-            const clean = {};
-            ITEMS.forEach(it => clean[it.id] = it.inv ? (4 - ans[it.id]) : ans[it.id]);
+            const data = {};
+            ITEMS.forEach(it => {
+                const val = ans[it.id] !== undefined ? ans[it.id] : 0;
+                data[it.id] = it.inv ? (4 - val) : val;
+            });
+
             const groups = [
                 { name: "Preparación", ids: [1,2,3,4,5] },
                 { name: "Reactividad (CCR1)", ids: [6,7,8,10,16,18] },
                 { name: "Disponibilidad (CCR2)", ids: [4,5,9,11,17,19] },
                 { name: "Entrenador", ids: [12,13,14,15] }
             ];
+
             return groups.map(g => {
-                const avg = g.ids.reduce((a, b) => a + clean[b], 0) / g.ids.length;
-                let level = "Bajo", color = "text-red-500", bg = "bg-red-500";
-                if (avg > 1.33) { level = "Medio"; color = "text-orange-500"; bg = "bg-orange-500"; }
-                if (avg > 2.66) { level = "Alto"; color = "text-green-500"; bg = "bg-green-500"; }
+                const sum = g.ids.reduce((a, id) => a + data[id], 0);
+                const avg = sum / g.ids.length;
+                let level = "Bajo", color = "text-red-400", bg = "bg-red-500";
+                if (avg >= 1.34) { level = "Medio"; color = "text-orange-400"; bg = "bg-orange-500"; }
+                if (avg >= 2.67) { level = "Alto"; color = "text-green-400"; bg = "bg-green-500"; }
                 return { name: g.name, score: avg.toFixed(2), level, color, bg };
             });
         };
 
-        window.interpret = (results) => {
-            const r1 = parseFloat(results[1].score); // CCR1
-            const r2 = parseFloat(results[2].score); // CCR2
+        window.interpret = (res) => {
+            const ccr1 = parseFloat(res[1].score);
+            const ccr2 = parseFloat(res[2].score);
             
-            let text = "Perfil en maduración: Mantienes el equilibrio en muchos momentos, pero el error aún te genera un impacto que debemos aprender a soltar más rápido para seguir sumando.";
-            let action = "Focalízate en tu rol defensivo justo después de un error; la acción física ayuda a borrar el pensamiento negativo.";
+            if (ccr1 >= 2.67 && ccr2 >= 2.67) return { 
+                text: "Muestras un perfil de alta resiliencia funcional. Consideras el fallo como una oportunidad de aprendizaje y tu disponibilidad emocional tras el error es excelente.", 
+                action: "Tu capacidad para 'resetear' la mente ayuda a que el equipo no pierda fluidez. Sigue liderando con esa calma técnica." 
+            };
+            
+            if (ccr1 < 1.34) return { 
+                text: "El error tiende a bloquearte. Sientes que el fallo te define en el momento y eso te saca del partido emocionalmente, afectando a tu rendimiento posterior.", 
+                action: "Tras un error, busca una acción física defensiva inmediata (un sprint o una ayuda). El cuerpo activado ayuda a limpiar la mente del fallo anterior." 
+            };
 
-            if (r1 >= 2.67 && r2 >= 2.67) {
-                text = "Perfil Resiliente: Gestionas el fallo como un dato técnico. Tu disponibilidad emocional tras el error es excelente, lo que te permite liderar al equipo en momentos tensos.";
-                action = "Esa resiliencia es tu mayor talento. Sigue contagiando esa calma a tus compañeros cuando ellos fallen.";
-            } else if (r1 < 1.34) {
-                text = "Perfil Sensible al Error: El fallo te bloquea y te saca del partido emocionalmente. Sientes que el error te define y eso reduce tu intensidad en las siguientes acciones.";
-                action = "Practica el 'vaciado mental' inmediato: una palmada o una respiración fuerte para decir 'la jugada terminó'.";
-            }
-            return { text, action };
+            return { 
+                text: "Perfil en equilibrio dinámico. El error te afecta, pero realizas un esfuerzo consciente por seguir pidiendo el balón y participando en el juego.", 
+                action: "Utiliza las indicaciones del staff como guía técnica rápida para volver a concentrarte en la tarea presente." 
+            };
         };
 
-        window.loadData = async () => {
-            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
-            const list = document.getElementById('admin-list');
-            list.innerHTML = '';
-            snap.forEach(doc => {
-                const d = doc.data();
-                list.innerHTML += `
-                    <div class="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center mb-2 shadow-sm text-[10px]">
-                        <div>
-                            <p class="font-black text-slate-800">${new Date(d.createdAt).toLocaleDateString()}</p>
-                            <p class="text-slate-300 font-mono">${doc.id.slice(0,6)}</p>
-                        </div>
-                        <div class="flex gap-2 font-bold font-mono">
-                            ${d.scores.map(s => `<span class="${s.color}">${s.score}</span>`).join('·')}
-                        </div>
-                    </div>`;
-            });
+        window.printReport = () => {
+            window.print();
         };
 
-        window.exportCSV = async () => {
-            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
-            let csv = "ID,Fecha,Prep,CCR1,CCR2,Staff\n";
-            snap.forEach(doc => {
-                const d = doc.data();
-                csv += `${doc.id},${d.createdAt},${d.scores[0].score},${d.scores[1].score},${d.scores[2].score},${d.scores[3].score}\n`;
-            });
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = `cfeb_fap_export_${new Date().getTime()}.csv`; a.click();
-        };
-
-        // Firebase Auth Init
-        onAuthStateChanged(auth, (u) => { 
-            state.user = u; 
-            if (!u) signInAnonymously(auth); 
-            render(); 
-        });
+        // Iniciar
+        render();
 
     </script>
 </body>
-</html>                                
+</html>                   
