@@ -1,2 +1,237 @@
-# CFEB-FAP-Basketball-App.
-Herramienta digital para el Análisis Funcional del Error en Baloncesto basada en el protocolo FAP.
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CFEB-FAP | Análisis del Error</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .card-active:active { transform: scale(0.96); }
+        .transition-width { transition: width 0.4s ease; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+    <div id="app" class="min-h-screen flex flex-col max-w-md mx-auto bg-white shadow-2xl shadow-slate-200">
+        <!-- Header -->
+        <header class="p-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/80 backdrop-blur-md z-10">
+            <div class="flex items-center gap-2">
+                <div class="bg-orange-600 p-1.5 rounded-lg">
+                    <i data-lucide="basketball" class="w-5 h-5 text-white"></i>
+                </div>
+                <h1 class="font-extrabold text-lg tracking-tight">CFEB<span class="text-orange-600">-FAP</span></h1>
+            </div>
+            <div id="status" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                <span class="w-2 h-2 bg-green-500 rounded-full"></span> Anónimo
+            </div>
+        </header>
+
+        <!-- Contenido Dinámico -->
+        <main id="content" class="flex-grow p-6"></main>
+
+        <footer class="p-6 text-center border-t border-slate-50">
+            <p class="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Protocolo FAP · Jorge Maroto Cuadrado</p>
+        </footer>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración (Se puede inyectar vía Vercel o pegar aquí tus claves de Firebase)
+        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = window.__app_id || 'basket-fap-v1';
+
+        const ITEMS = [
+            { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "Pre" },
+            { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "Pre", inv: true },
+            { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", cat: "Pre", inv: true },
+            { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", cat: "Pre" },
+            { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", cat: "Pre" },
+            { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", cat: "CCR1", inv: true },
+            { id: 7, text: "Después de fallar, tardo en volver a concentrarme", cat: "CCR1", inv: true },
+            { id: 8, text: "Evito participar en la siguiente jugada tras un error", cat: "CCR1", inv: true },
+            { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", cat: "CCR2" },
+            { id: 10, text: "El error baja mi intensidad defensiva", cat: "CCR1", inv: true },
+            { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", cat: "CCR2" },
+            { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", cat: "Coach" },
+            { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", cat: "Coach" },
+            { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", cat: "Coach", inv: true },
+            { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", cat: "Coach" },
+            { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", cat: "CCR1", inv: true },
+            { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", cat: "CCR2" },
+            { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", cat: "CCR1", inv: true },
+            { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", cat: "CCR2" }
+        ];
+
+        let state = { view: 'home', index: 0, answers: {}, user: null };
+
+        function render() {
+            const root = document.getElementById('content');
+            root.innerHTML = '';
+
+            if (state.view === 'home') {
+                root.innerHTML = `
+                    <div class="space-y-6 pt-8 animate-in fade-in duration-500">
+                        <h2 class="text-3xl font-extrabold leading-tight text-slate-800">El fallo es parte del aprendizaje.</h2>
+                        <p class="text-slate-500 text-sm">Este cuestionario es 100% anónimo. Tus datos nos ayudarán a mejorar el apoyo táctico y emocional del equipo.</p>
+                        <button onclick="setView('quiz')" class="w-full bg-slate-900 text-white font-bold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors">
+                            Comenzar Evaluación <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                        </button>
+                        <button onclick="setView('admin')" class="w-full text-slate-400 font-bold py-2 text-[10px] uppercase tracking-widest flex items-center justify-center gap-1">
+                            <i data-lucide="lock" class="w-3 h-3"></i> Acceso Administrador
+                        </button>
+                    </div>
+                `;
+            } else if (state.view === 'quiz') {
+                const item = ITEMS[state.index];
+                const progress = (state.index / ITEMS.length) * 100;
+                root.innerHTML = `
+                    <div class="animate-in slide-in-from-right duration-300">
+                        <div class="mb-8">
+                            <div class="flex justify-between items-end mb-2">
+                                <span class="text-[10px] font-black text-orange-600 uppercase tracking-tighter">Ítem ${state.index + 1} de 19</span>
+                                <span class="text-[10px] font-bold text-slate-300">${Math.round(progress)}%</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-orange-600 h-full transition-width" style="width: ${progress}%"></div>
+                            </div>
+                        </div>
+                        <h3 class="text-xl font-bold text-slate-800 mb-10 italic">"${item.text}"</h3>
+                        <div class="grid gap-3">
+                            ${[0,1,2,3,4].map(v => `
+                                <button onclick="next(${v})" class="card-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left flex justify-between items-center hover:border-orange-500 transition-all group">
+                                    <span class="font-bold text-slate-700">${v === 0 ? '0 - Nada' : v === 4 ? '4 - Mucho' : v}</span>
+                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-orange-500"></i>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } else if (state.view === 'report') {
+                const results = calculate(state.answers);
+                root.innerHTML = `
+                    <div class="space-y-6 animate-in zoom-in duration-500">
+                        <div class="text-center">
+                            <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 text-orange-600">
+                                <i data-lucide="award" class="w-8 h-8"></i>
+                            </div>
+                            <h2 class="text-2xl font-black text-slate-900">Tu Perfil Funcional</h2>
+                            <p class="text-slate-400 text-xs">Resultados basados en tus respuestas</p>
+                        </div>
+                        <div class="space-y-3">
+                            ${results.map(r => `
+                                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <div class="flex justify-between mb-1">
+                                        <span class="text-[10px] font-black uppercase text-slate-400">${r.name}</span>
+                                        <span class="text-[10px] font-bold ${r.color}">${r.level}</span>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex-grow bg-white h-2 rounded-full overflow-hidden border border-slate-100">
+                                            <div class="h-full ${r.bg}" style="width: ${(r.score / 4) * 100}%"></div>
+                                        </div>
+                                        <span class="font-mono font-bold text-xs">${r.score}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <button onclick="location.reload()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl">Finalizar</button>
+                    </div>
+                `;
+            } else if (state.view === 'admin') {
+                root.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-xl font-black">Datos Acumulados</h2>
+                            <button onclick="exportCSV()" class="p-2 bg-green-600 text-white rounded-lg"><i data-lucide="download"></i></button>
+                        </div>
+                        <div id="admin-list" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 text-[10px]">
+                            <p class="text-center py-10 text-slate-300">Cargando...</p>
+                        </div>
+                        <button onclick="setView('home')" class="w-full py-3 text-slate-400 font-bold">Volver</button>
+                    </div>
+                `;
+                loadAdmin();
+            }
+            lucide.createIcons();
+        }
+
+        window.setView = (v) => { state.view = v; render(); };
+        window.next = async (val) => {
+            state.answers[ITEMS[state.index].id] = val;
+            if (state.index < ITEMS.length - 1) {
+                state.index++;
+                render();
+            } else {
+                state.view = 'report';
+                render();
+                // Guardar en Nube
+                const scores = calculate(state.answers);
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), {
+                    date: new Date().toISOString(),
+                    scores: scores,
+                    raw: state.answers
+                });
+            }
+        };
+
+        function calculate(ans) {
+            const proc = {};
+            ITEMS.forEach(it => proc[it.id] = it.inv ? (4 - ans[it.id]) : ans[it.id]);
+            const scales = [
+                { name: "Preparación", ids: [1,2,3,4,5] },
+                { name: "Reactividad (CCR1)", ids: [6,7,8,10,16,18] },
+                { name: "Disponibilidad (CCR2)", ids: [4,5,9,11,17,19] },
+                { name: "Entrenador", ids: [12,13,14,15] }
+            ];
+            return scales.map(s => {
+                const avg = s.ids.reduce((a, b) => a + proc[b], 0) / s.ids.length;
+                let level = "Bajo", color = "text-red-500", bg = "bg-red-500";
+                if (avg > 1.33) { level = "Medio"; color = "text-yellow-500"; bg = "bg-yellow-500"; }
+                if (avg > 2.66) { level = "Alto"; color = "text-green-600"; bg = "bg-green-600"; }
+                return { name: s.name, score: avg.toFixed(2), level, color, bg };
+            });
+        }
+
+        async function loadAdmin() {
+            const snap = await getDocs(query(collection(db, 'artifacts', appId, 'public', 'data', 'responses')));
+            const list = document.getElementById('admin-list');
+            list.innerHTML = '';
+            snap.forEach(doc => {
+                const d = doc.data();
+                list.innerHTML += `<div class="p-2 border-b border-slate-100 flex justify-between items-center">
+                    <span>${new Date(d.date).toLocaleDateString()}</span>
+                    <span class="font-bold text-slate-400">${d.scores.map(s => s.score).join(' | ')}</span>
+                </div>`;
+            });
+        }
+
+        window.exportCSV = async () => {
+            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
+            let csv = "ID,Fecha,Prep,CCR1,CCR2,Entr\n";
+            snap.forEach(doc => {
+                const d = doc.data();
+                csv += `${doc.id},${d.date},${d.scores[0].score},${d.scores[1].score},${d.scores[2].score},${d.scores[3].score}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'cfeb_fap_export.csv'; a.click();
+        };
+
+        onAuthStateChanged(auth, (u) => { 
+            state.user = u; 
+            if (!u) signInAnonymously(auth); 
+            render(); 
+        });
+    </script>
+</body>
+</html>
