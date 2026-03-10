@@ -17,8 +17,8 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
 
-    <div id="app" class="min-h-screen flex flex-col max-w-lg mx-auto bg-white shadow-2xl border-x border-slate-100">
-        <!-- Cabecera -->
+    <div id="app" class="min-h-screen flex flex-col max-w-lg mx-auto bg-white shadow-2xl border-x border-slate-100 relative">
+        <!-- Header -->
         <header class="p-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md z-50">
             <div class="flex items-center gap-3">
                 <div class="bg-orange-600 p-2 rounded-xl shadow-lg shadow-orange-100">
@@ -26,29 +26,39 @@
                 </div>
                 <div>
                     <h1 class="font-extrabold text-lg leading-none uppercase tracking-tight">CFEB-FAP</h1>
-                    <p class="text-[9px] text-orange-600 font-black uppercase tracking-widest mt-1 italic">El fallo es aprendizaje</p>
+                    <p class="text-[9px] text-orange-600 font-black uppercase tracking-widest mt-1 italic">Club Estudiantes</p>
                 </div>
             </div>
-            <div id="nav-btn" class="hidden">
-                <button onclick="window.go('home')" class="p-2 text-slate-400 hover:text-slate-600">
-                    <i data-lucide="home" class="w-5 h-5"></i>
-                </button>
+            <div id="cloud-status" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-100 bg-slate-50 text-slate-400">
+                <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-300"></span>
+                <span id="status-text" class="text-[9px] font-black uppercase tracking-wider">Local</span>
             </div>
         </header>
 
-        <!-- Contenido Principal -->
+        <!-- Main View -->
         <main id="main-view" class="flex-grow p-6 flex flex-col overflow-y-auto no-scrollbar"></main>
 
         <!-- Footer -->
         <footer class="p-6 text-center border-t border-slate-50 bg-slate-50/20">
             <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed">
-                Protocolo Jorge Maroto Cuadrado<br>CB Estudiantes · 2026
+                Jorge Maroto Cuadrado<br>Protocolo FAP · 2026
             </p>
         </footer>
     </div>
 
-    <script>
-        // Configuración de Ítems (Basado en el PDF)
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // CONFIGURACIÓN
+        const firebaseConfigStr = typeof window.__firebase_config !== 'undefined' ? window.__firebase_config : null;
+        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'cfeb-fap-default';
+        
+        let db = null;
+        let auth = null;
+        let user = null;
+
         const ITEMS = [
             { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "PREP" },
             { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "PREP", inv: true },
@@ -71,36 +81,68 @@
             { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", cat: "CCR2" }
         ];
 
-        let state = {
-            view: 'home',
-            currentIdx: 0,
-            answers: {},
-            results: null
-        };
+        let state = { view: 'home', playerName: '', currentIdx: 0, answers: {} };
+
+        // Inicialización Firebase
+        if (firebaseConfigStr) {
+            try {
+                const config = JSON.parse(firebaseConfigStr);
+                const app = initializeApp(config);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                const initAuth = async () => {
+                    if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+                        await signInWithCustomToken(auth, window.__initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                initAuth();
+                onAuthStateChanged(auth, (u) => {
+                    user = u;
+                    if (user) {
+                        document.getElementById('status-dot').className = "w-2 h-2 rounded-full bg-green-500 animate-pulse";
+                        document.getElementById('status-text').innerText = "Nube";
+                    }
+                });
+            } catch (e) { console.error("Firebase fail", e); }
+        }
 
         const render = () => {
             const root = document.getElementById('main-view');
-            const navBtn = document.getElementById('nav-btn');
             root.innerHTML = '';
-            navBtn.className = state.view === 'home' ? 'hidden' : 'block';
 
             if (state.view === 'home') {
                 root.innerHTML = `
-                    <div class="space-y-8 pt-10 slide-up text-center flex-grow flex flex-col justify-center">
-                        <div class="bg-orange-50 w-28 h-28 rounded-full flex items-center justify-center mx-auto border-2 border-orange-100 shadow-inner">
-                             <i data-lucide="brain-circuit" class="w-14 h-14 text-orange-600"></i>
+                    <div class="space-y-8 pt-6 slide-up text-center flex-grow flex flex-col justify-center">
+                        <div class="bg-orange-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto border-2 border-orange-100 shadow-inner">
+                             <i data-lucide="user" class="w-10 h-10 text-orange-600"></i>
                         </div>
                         <div class="space-y-3 px-4">
-                            <h2 class="text-3xl font-black text-slate-900 tracking-tight leading-none uppercase italic">Análisis Funcional del Error</h2>
-                            <p class="text-slate-400 text-sm font-medium">Test de autoinforme para jugadores de baloncesto sobre gestión emocional en pista.</p>
+                            <h2 class="text-2xl font-black text-slate-900 tracking-tight leading-none uppercase italic">Identificación del Jugador</h2>
+                            <p class="text-slate-400 text-xs font-medium italic">Recordando que el fallo es parte del aprendizaje.</p>
                         </div>
-                        <div class="pt-6">
-                            <button onclick="window.go('quiz')" class="tap-active w-full bg-slate-900 text-white font-extrabold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3 hover:bg-orange-600 transition-all">
-                                Iniciar Test CFEB-FAP <i data-lucide="play" class="w-5 h-5 fill-current"></i>
+                        <div class="px-4 space-y-4">
+                            <input type="text" id="player-input" placeholder="Nombre o ID del Jugador" 
+                                class="w-full p-4 rounded-2xl border-2 border-slate-100 focus:border-orange-500 outline-none font-bold text-center transition-all bg-slate-50">
+                            <button id="btn-start" class="tap-active w-full bg-slate-900 text-white font-extrabold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3 hover:bg-orange-600 transition-all">
+                                Comenzar Evaluación <i data-lucide="play" class="w-5 h-5 fill-current"></i>
+                            </button>
+                            <button id="btn-admin" class="w-full py-2 text-slate-300 font-bold uppercase text-[9px] tracking-[0.2em] flex items-center justify-center gap-2">
+                                <i data-lucide="lock" class="w-3 h-3"></i> Acceso Staff
                             </button>
                         </div>
                     </div>
                 `;
+                document.getElementById('btn-start').onclick = () => {
+                    const name = document.getElementById('player-input').value.trim();
+                    if (!name) return;
+                    state.playerName = name;
+                    state.view = 'quiz';
+                    render();
+                };
+                document.getElementById('btn-admin').onclick = () => { state.view = 'admin'; render(); };
             } else if (state.view === 'quiz') {
                 const item = ITEMS[state.currentIdx];
                 const progress = (state.currentIdx / ITEMS.length) * 100;
@@ -108,154 +150,172 @@
                     <div class="slide-up">
                         <div class="mb-10">
                             <div class="flex justify-between items-end mb-3">
-                                <span class="text-[10px] font-black text-orange-600 uppercase tracking-widest">Pregunta ${state.currentIdx + 1} de 19</span>
+                                <span class="text-[10px] font-black text-orange-600 uppercase tracking-widest">${state.playerName} • Item ${state.currentIdx + 1}</span>
                                 <span class="text-xs font-bold text-slate-300">${Math.round(progress)}%</span>
                             </div>
-                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                                 <div class="bg-orange-600 h-full transition-all duration-300" style="width: ${progress}%"></div>
                             </div>
                         </div>
-                        <h3 class="text-2xl font-bold text-slate-800 mb-12 italic leading-tight">"${item.text}"</h3>
+                        <h3 class="text-xl font-bold text-slate-800 mb-12 italic leading-tight">"${item.text}"</h3>
                         <div class="grid gap-3">
-                            ${[
-                                { v: 0, t: "Totalmente en desacuerdo" },
-                                { v: 1, t: "En desacuerdo" },
-                                { v: 2, t: "Neutral / A veces" },
-                                { v: 3, t: "De acuerdo" },
-                                { v: 4, t: "Totalmente de acuerdo" }
-                            ].map(opt => `
-                                <button onclick="window.save(${opt.v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-100 bg-white text-left font-bold flex justify-between items-center hover:border-orange-500 hover:bg-orange-50 transition-all">
-                                    <span class="text-slate-700">${opt.t}</span>
+                            ${[0,1,2,3,4].map(v => {
+                                const labels = ["Nunca", "Poco", "A veces", "Bastante", "Siempre"];
+                                return `<button onclick="window.saveAnswer(${v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left font-bold flex justify-between items-center hover:border-orange-500 hover:bg-orange-50 transition-all shadow-sm">
+                                    <span class="text-slate-700">${labels[v]}</span>
                                     <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200"></i>
-                                </button>
-                            `).join('')}
-                        </div>
-                        <div class="mt-8">
-                             <button onclick="window.prev()" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 ${state.currentIdx === 0 ? 'invisible' : ''}">
-                                <i data-lucide="arrow-left" class="w-3 h-3"></i> Pregunta anterior
-                             </button>
+                                </button>`;
+                            }).join('')}
                         </div>
                     </div>
                 `;
             } else if (state.view === 'report') {
-                const results = window.calculate(state.answers);
-                const profile = window.interpret(results);
+                const scores = window.calculateScores(state.answers);
+                const interpretation = window.getInterpretation(scores);
                 root.innerHTML = `
                     <div class="slide-up space-y-6 pb-10">
                         <div class="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden">
-                            <div class="absolute -top-10 -right-10 w-40 h-40 bg-orange-600/10 rounded-full blur-3xl"></div>
-                            <h4 class="text-orange-500 font-black text-[10px] uppercase tracking-widest mb-4">Perfil Interpretativo</h4>
-                            <p class="text-xl leading-relaxed italic mb-8 font-medium">"${profile.text}"</p>
+                            <h4 class="text-orange-500 font-black text-[10px] uppercase tracking-widest mb-4">Resultado de ${state.playerName}</h4>
+                            <p class="text-lg leading-relaxed italic mb-8 font-medium">"${interpretation.text}"</p>
                             
-                            <div class="space-y-5 pt-6 border-t border-white/10">
-                                ${results.map(r => `
-                                    <div class="space-y-1.5">
-                                        <div class="flex justify-between items-center text-[10px] font-black uppercase">
-                                            <span class="opacity-40 tracking-wider">${r.name}</span>
+                            <div class="space-y-4 pt-6 border-t border-white/10">
+                                ${scores.map(r => `
+                                    <div class="space-y-1">
+                                        <div class="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                                            <span class="opacity-40">${r.name}</span>
                                             <span class="${r.color}">${r.level} (${r.score})</span>
                                         </div>
-                                        <div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                        <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
                                             <div class="h-full ${r.bg}" style="width: ${(r.score/4)*100}%"></div>
                                         </div>
                                     </div>
                                 `).join('')}
                             </div>
                         </div>
-
                         <div class="bg-orange-50 p-6 rounded-3xl border border-orange-100 flex gap-4">
                             <div class="bg-white p-2.5 rounded-xl h-fit border border-orange-200 shadow-sm text-orange-600">
                                 <i data-lucide="zap" class="w-5 h-5"></i>
                             </div>
-                            <div class="space-y-1 text-left">
-                                <p class="text-[10px] font-black text-orange-800 uppercase tracking-widest">Recomendación Staff</p>
-                                <p class="text-xs text-orange-950 font-bold leading-relaxed">${profile.action}</p>
+                            <div class="space-y-1">
+                                <p class="text-[10px] font-black text-orange-800 uppercase tracking-widest">Acción sugerida</p>
+                                <p class="text-xs text-orange-950 font-bold leading-relaxed">${interpretation.action}</p>
                             </div>
                         </div>
-
-                        <div class="grid grid-cols-2 gap-3 pt-4">
-                            <button onclick="window.go('home')" class="py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl text-sm">Cerrar</button>
-                            <button onclick="window.printReport()" class="py-4 bg-slate-900 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg">
-                                <i data-lucide="download" class="w-4 h-4"></i> Guardar PDF
-                            </button>
-                        </div>
+                        <button onclick="location.reload()" class="tap-active w-full bg-slate-900 text-white font-extrabold py-5 rounded-2xl shadow-lg mt-4">Terminar Sesión</button>
                     </div>
                 `;
+            } else if (state.view === 'admin') {
+                root.innerHTML = `
+                    <div class="slide-up space-y-6 h-full flex flex-col">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-2xl font-black tracking-tight">Histórico Cloud</h2>
+                            <button id="btn-csv" class="bg-green-600 text-white p-3 rounded-2xl shadow-lg hover:bg-green-700 transition-colors">
+                                <i data-lucide="download" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                        <div id="admin-list" class="flex-grow space-y-3 overflow-y-auto pr-1 no-scrollbar">
+                            <div class="py-20 text-center opacity-30 italic text-sm">Consultando registros...</div>
+                        </div>
+                        <button onclick="window.go('home')" class="w-full py-4 text-slate-400 font-bold uppercase text-[10px] tracking-[0.3em]">Cerrar Panel</button>
+                    </div>
+                `;
+                window.loadAdminRecords();
+                document.getElementById('btn-csv').onclick = () => window.exportCSV();
             }
             lucide.createIcons();
         };
 
-        window.go = (v) => { 
-            state.view = v; 
-            if(v === 'home') { state.currentIdx = 0; state.answers = {}; }
-            render(); 
-        };
-        
-        window.save = (v) => {
+        window.go = (v) => { state.view = v; render(); };
+
+        window.saveAnswer = async (v) => {
             state.answers[ITEMS[state.currentIdx].id] = v;
             if (state.currentIdx < ITEMS.length - 1) {
                 state.currentIdx++; render();
             } else {
-                state.view = 'report'; render();
+                state.view = 'report';
+                render();
+                // GUARDADO EN CLOUD
+                if (db && user) {
+                    try {
+                        const scores = window.calculateScores(state.answers);
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), {
+                            playerName: state.playerName,
+                            timestamp: serverTimestamp(),
+                            scores: scores,
+                            raw: state.answers,
+                            uid: user.uid
+                        });
+                    } catch (e) { console.error("Cloud Save Error", e); }
+                }
             }
         };
 
-        window.prev = () => {
-            if (state.currentIdx > 0) {
-                state.currentIdx--; render();
-            }
-        };
-
-        window.calculate = (ans) => {
+        window.calculateScores = (ans) => {
             const data = {};
             ITEMS.forEach(it => {
-                const val = ans[it.id] !== undefined ? ans[it.id] : 0;
+                const val = ans[it.id] || 0;
                 data[it.id] = it.inv ? (4 - val) : val;
             });
-
-            const groups = [
+            const sub = [
                 { name: "Preparación", ids: [1,2,3,4,5] },
-                { name: "Reactividad (CCR1)", ids: [6,7,8,10,16,18] },
-                { name: "Disponibilidad (CCR2)", ids: [4,5,9,11,17,19] },
+                { name: "CCR1 (React)", ids: [6,7,8,10,16,18] },
+                { name: "CCR2 (Dispo)", ids: [4,5,9,11,17,19] },
                 { name: "Entrenador", ids: [12,13,14,15] }
             ];
-
-            return groups.map(g => {
-                const sum = g.ids.reduce((a, id) => a + data[id], 0);
-                const avg = sum / g.ids.length;
+            return sub.map(s => {
+                const avg = s.ids.reduce((a, b) => a + data[b], 0) / s.ids.length;
                 let level = "Bajo", color = "text-red-400", bg = "bg-red-500";
                 if (avg >= 1.34) { level = "Medio"; color = "text-orange-400"; bg = "bg-orange-500"; }
                 if (avg >= 2.67) { level = "Alto"; color = "text-green-400"; bg = "bg-green-500"; }
-                return { name: g.name, score: avg.toFixed(2), level, color, bg };
+                return { name: s.name, score: avg.toFixed(2), level, color, bg };
             });
         };
 
-        window.interpret = (res) => {
-            const ccr1 = parseFloat(res[1].score);
-            const ccr2 = parseFloat(res[2].score);
-            
-            if (ccr1 >= 2.67 && ccr2 >= 2.67) return { 
-                text: "Muestras un perfil de alta resiliencia funcional. Consideras el fallo como una oportunidad de aprendizaje y tu disponibilidad emocional tras el error es excelente.", 
-                action: "Tu capacidad para 'resetear' la mente ayuda a que el equipo no pierda fluidez. Sigue liderando con esa calma técnica." 
-            };
-            
-            if (ccr1 < 1.34) return { 
-                text: "El error tiende a bloquearte. Sientes que el fallo te define en el momento y eso te saca del partido emocionalmente, afectando a tu rendimiento posterior.", 
-                action: "Tras un error, busca una acción física defensiva inmediata (un sprint o una ayuda). El cuerpo activado ayuda a limpiar la mente del fallo anterior." 
-            };
-
-            return { 
-                text: "Perfil en equilibrio dinámico. El error te afecta, pero realizas un esfuerzo consciente por seguir pidiendo el balón y participando en el juego.", 
-                action: "Utiliza las indicaciones del staff como guía técnica rápida para volver a concentrarte en la tarea presente." 
-            };
+        window.getInterpretation = (scores) => {
+            const ccr1 = parseFloat(scores[1].score);
+            const ccr2 = parseFloat(scores[2].score);
+            if (ccr1 >= 2.67 && ccr2 >= 2.67) return { text: "Perfil Resiliente: El error no te bloquea, eres capaz de seguir disponible para el equipo.", action: "Sigue manteniendo ese foco técnico tras el fallo." };
+            if (ccr1 < 1.34) return { text: "Perfil Sensible: El error te saca del partido emocionalmente.", action: "Usa un 'reset' físico (ajustar cordones, aplauso) para volver al presente." };
+            return { text: "Perfil Variable: Tu gestión del error depende del momento del partido.", action: "Confía en las consignas de tu entrenador para volver al juego." };
         };
 
-        window.printReport = () => {
-            window.print();
+        window.loadAdminRecords = async () => {
+            if (!db || !user) return;
+            try {
+                const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), orderBy('timestamp', 'desc'));
+                const snap = await getDocs(q);
+                const list = document.getElementById('admin-list');
+                list.innerHTML = '';
+                if (snap.empty) { list.innerHTML = '<div class="py-20 text-center text-slate-300 italic">Sin registros.</div>'; return; }
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const date = d.timestamp?.toDate().toLocaleString() || 'Reciente';
+                    list.innerHTML += `
+                        <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center mb-2">
+                            <div>
+                                <p class="font-black text-slate-800 text-xs uppercase">${d.playerName}</p>
+                                <p class="text-[8px] text-slate-400 font-bold uppercase tracking-widest">${date}</p>
+                            </div>
+                            <div class="flex gap-2 font-mono font-bold text-[10px]">
+                                ${d.scores.map(s => `<span class="${s.color}">${s.score}</span>`).join(' ')}
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (e) { console.error("Admin load error", e); }
         };
 
-        // Iniciar
-        render();
-
-    </script>
-</body>
-</html>                   
+        window.exportCSV = async () => {
+            if (!db) return;
+            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
+            let csv = "Jugador,Fecha,Prep,CCR1,CCR2,Staff\n";
+            snap.forEach(doc => {
+                const d = doc.data();
+                const date = d.timestamp?.toDate().toISOString() || '';
+                csv += `"${d.playerName}",${date},${d.scores[0].score},${d.scores[1].score},${d.scores[2].score},${d.scores[3].score}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `cfeb-fap-data.csv`; a.click();
+ 
