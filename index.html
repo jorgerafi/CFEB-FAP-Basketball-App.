@@ -1,437 +1,468 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, query, Timestamp } from 'firebase/firestore';
 import { 
-  getAuth, 
-  signInAnonymously, 
-  onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  getDocs, 
-  query,
-  orderBy
-} from 'firebase/firestore';
-import { 
-  Trophy, 
-  Settings, 
+  ClipboardCheck, 
+  BarChart3, 
+  Download, 
+  User, 
+  ChevronRight, 
+  ChevronLeft, 
   AlertCircle,
-  ChevronLeft,
-  ChevronRight,
-  Database,
-  User,
-  Activity,
-  Award,
-  LogOut
+  CheckCircle2,
+  Lock,
+  ArrowRight
 } from 'lucide-react';
 
-// ========================================================
-// 1. CONFIGURACIÓN MANUAL DE FIREBASE
-// ========================================================
-const manualConfig = {
-  apiKey: "TU_API_KEY_AQUÍ",
-  authDomain: "tu-proyecto.firebaseapp.com",
-  projectId: "tu-proyecto-id",
-  storageBucket: "tu-proyecto.appspot.com",
-  messagingSenderId: "tu-sender-id",
-  appId: "tu-app-id"
-};
+// --- CONFIGURACIÓN FIREBASE ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'cfeb-fap-app';
 
-const getFirebaseConfig = () => {
-  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-    try { return JSON.parse(__firebase_config); } catch (e) { }
-  }
-  return manualConfig;
-};
-
-const firebaseConfig = getFirebaseConfig();
-const isConfigValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== "TU_API_KEY_AQUÍ";
-
-let auth, db;
-try {
-  const app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (e) {
-  console.error("Firebase Initialization Error:", e);
-}
-
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'cfeb-fap-v2';
-
-// --- CONSTANTES ---
-const QUESTIONS = [
-  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "PRE-PARTIDO", inverted: false },
-  { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "PRE-PARTIDO", inverted: true },
-  { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", section: "PRE-PARTIDO", inverted: true },
-  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "DURANTE EL JUEGO", inverted: false },
-  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "DURANTE EL JUEGO", inverted: false },
-  { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", section: "DURANTE EL JUEGO", inverted: true },
-  { id: 7, text: "Después de fallar, tardo en volver a concentrarme", section: "DURANTE EL JUEGO", inverted: true },
-  { id: 8, text: "Evito participar en la siguiente jugada tras un error", section: "DURANTE EL JUEGO", inverted: true },
-  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "DURANTE EL JUEGO", inverted: false },
-  { id: 10, text: "El error baja mi intensidad defensiva", section: "DURANTE EL JUEGO", inverted: true },
-  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "DURANTE EL JUEGO", inverted: false },
-  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "RELACIÓN STAFF", inverted: false },
-  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "RELACIÓN STAFF", inverted: false },
-  { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", section: "RELACIÓN STAFF", inverted: true },
-  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "RELACIÓN STAFF", inverted: false },
-  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "POST-PARTIDO", inverted: true },
-  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "POST-PARTIDO", inverted: false },
-  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "POST-PARTIDO", inverted: true },
-  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "POST-PARTIDO", inverted: false },
+// --- CONSTANTES DEL TEST ---
+const ITEMS = [
+  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "Antes", invert: false },
+  { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "Antes", invert: true },
+  { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", section: "Antes", invert: true },
+  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "Antes", invert: false },
+  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "Antes", invert: false },
+  { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", section: "Durante", invert: true },
+  { id: 7, text: "Después de fallar, tardo en volver a concentrarme", section: "Durante", invert: true },
+  { id: 8, text: "Evito participar en la siguiente jugada tras un error", section: "Durante", invert: true },
+  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "Durante", invert: false },
+  { id: 10, text: "El error baja mi intensidad defensiva", section: "Durante", invert: true },
+  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "Durante", invert: false },
+  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "Entrenador", invert: false },
+  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "Entrenador", invert: false },
+  { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", section: "Entrenador", invert: true },
+  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "Entrenador", invert: false },
+  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "Después", invert: true },
+  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "Después", invert: false },
+  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "Después", invert: true },
+  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "Después", invert: false },
 ];
 
-const SCALES = {
-  PREPARACION: { name: "Preparación Mental", items: [1, 2, 3, 4, 5], color: "bg-blue-500" },
-  REACTIVIDAD: { name: "Reactividad al Error (CCR1)", items: [6, 7, 8, 10, 16, 18], color: "bg-red-500" },
-  DISPONIBILIDAD: { name: "Disponibilidad (CCR2)", items: [4, 5, 9, 11, 17, 19], color: "bg-emerald-500" },
-  ENTRENADOR: { name: "Apoyo del Staff", items: [12, 13, 14, 15], color: "bg-amber-500" },
-};
+const SUBESCALAS = [
+  { name: "Preparación Pre-partido", items: [1, 2, 3, 4, 5] },
+  { name: "Reactividad al Error (CCR1)", items: [6, 7, 8, 10, 16, 18] },
+  { name: "Disponibilidad Post-error (CCR2)", items: [4, 5, 9, 11, 17, 19] },
+  { name: "Entrenador (Apoyo Funcional)", items: [12, 13, 14, 15] }
+];
 
 export default function App() {
+  const [view, setView] = useState('welcome'); // welcome, test, results, admin
   const [user, setUser] = useState(null);
-  const [view, setView] = useState('welcome');
-  const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [adminData, setAdminData] = useState([]);
+  const [currentStep, setCurrentStep] = useState(0);
   const [adminPass, setAdminPass] = useState("");
-  const [dbStatus, setDbStatus] = useState(isConfigValid ? 'connected' : 'error');
+  const [isAdminAuth, setIsAdminAuth] = useState(false);
+  const [allData, setAllData] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Auth Effect
   useEffect(() => {
-    if (!isConfigValid) return;
-    
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
-      } catch (error) {
-        setDbStatus('error');
+      } catch (err) {
+        console.error("Auth error", err);
       }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
+    return onAuthStateChanged(auth, setUser);
   }, []);
 
-  const calculateResults = (dataAnswers) => {
-    const results = {};
-    Object.keys(SCALES).forEach(key => {
-      const scale = SCALES[key];
-      const scores = scale.items.map(id => {
-        const q = QUESTIONS.find(q => q.id === id);
-        const val = dataAnswers[id] ?? 0;
-        return q.inverted ? 4 - val : val;
+  // Fetch Data for Admin
+  useEffect(() => {
+    if (!user || !isAdminAuth) return;
+    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllData(data);
+    }, (err) => console.error("Firestore error", err));
+    return () => unsubscribe();
+  }, [user, isAdminAuth]);
+
+  const handleAnswer = (itemId, val) => {
+    setAnswers(prev => ({ ...prev, [itemId]: val }));
+  };
+
+  const calculateSubscales = (dataAnswers) => {
+    return SUBESCALAS.map(sub => {
+      let sum = 0;
+      sub.items.forEach(id => {
+        const item = ITEMS.find(i => i.id === id);
+        let val = dataAnswers[id] || 0;
+        if (item.invert) val = 4 - val;
+        sum += val;
       });
-      results[key] = parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2));
+      return {
+        name: sub.name,
+        score: parseFloat((sum / sub.items.length).toFixed(2))
+      };
     });
-    return results;
   };
 
-  const handleSave = async () => {
-    setLoading(true);
-    const results = calculateResults(answers);
+  const submitTest = async () => {
+    if (Object.keys(answers).length < ITEMS.length) return;
+    setIsSubmitting(true);
     
-    if (isConfigValid && user) {
-      try {
-        const colPath = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
-        await addDoc(colPath, { 
-          userId: user.uid, 
-          timestamp: new Date().toISOString(), 
-          results 
-        });
-      } catch (e) {
-        console.error("Cloud Save Error:", e);
-      }
-    }
-    
-    setLoading(false);
-    setView('results');
-  };
+    const results = calculateSubscales(answers);
+    const submission = {
+      timestamp: Timestamp.now(),
+      answers,
+      results,
+      userId: user.uid
+    };
 
-  const handleAdminAccess = async () => {
-    if (adminPass !== "CFEB2026") { 
-      alert("Acceso denegado."); 
-      return; 
-    }
-    if (!isConfigValid) {
-      alert("Error: Firebase no configurado.");
-      return;
-    }
-    setLoading(true);
     try {
-      const colPath = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
-      const snapshot = await getDocs(colPath);
-      setAdminData(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setView('admin');
-    } catch (e) {
-      alert("Error al recuperar datos.");
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), submission);
+      setView('results');
+    } catch (err) {
+      console.error(err);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  // --- COMPONENTES DE VISTA ---
+  const exportCSV = () => {
+    if (allData.length === 0) return;
+    
+    // Headers: Timestamp, Subscales...
+    const headers = ["Fecha", "ID Usuario", ...SUBESCALAS.map(s => s.name)];
+    const rows = allData.map(d => [
+      d.timestamp?.toDate().toLocaleString() || "",
+      d.userId,
+      ...d.results.map(r => r.score)
+    ]);
 
-  if (view === 'welcome') return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
-        <div className="bg-slate-900 p-8 text-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-          <Trophy className="w-12 h-12 text-orange-500 mx-auto mb-4" />
-          <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">CFEB-FAP</h1>
-          <p className="text-slate-400 text-xs font-bold tracking-[0.2em] mt-2">Functional Analysis Protocol</p>
-        </div>
-        
-        <div className="p-8">
-          <div className="space-y-4 mb-8">
-            <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl">
-              <Activity className="w-5 h-5 text-orange-500 mt-1" />
-              <div>
-                <p className="text-sm font-bold text-slate-800">Evaluación de Resiliencia</p>
-                <p className="text-xs text-slate-500">Mide tu capacidad de respuesta ante el error en pista.</p>
-              </div>
-            </div>
-            {dbStatus === 'error' && (
-              <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-bold border border-amber-100 uppercase">
-                <AlertCircle className="w-4 h-4" />
-                <span>Modo Offline: No se guardarán datos en la nube.</span>
-              </div>
-            )}
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `resultados_CFEB_FAP_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getInterpretation = (score) => {
+    if (score >= 2.67) return { label: "Alto (Fortaleza)", color: "text-green-600", bg: "bg-green-100" };
+    if (score >= 1.34) return { label: "Medio (Intermedio)", color: "text-yellow-600", bg: "bg-yellow-100" };
+    return { label: "Bajo (Área de Mejora)", color: "text-red-600", bg: "bg-red-100" };
+  };
+
+  // UI Components
+  if (view === 'welcome') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 space-y-6">
+          <div className="bg-orange-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto">
+            <ClipboardCheck className="text-orange-600 w-8 h-8" />
           </div>
-
-          <button 
-            onClick={() => setView('survey')}
-            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-95"
-          >
-            Iniciar Evaluación
-          </button>
-
-          <div className="mt-10 pt-6 border-t border-slate-100">
-            <div className="flex gap-2">
-              <input 
-                type="password" 
-                placeholder="Staff Pass" 
-                className="flex-1 p-3 bg-slate-50 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-200 transition-all text-center"
-                onChange={(e) => setAdminPass(e.target.value)}
-              />
-              <button 
-                onClick={handleAdminAccess}
-                className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-            </div>
+          <h1 className="text-2xl font-bold text-slate-800">Cuestionario CFEB-FAP</h1>
+          <p className="text-slate-600">
+            Análisis de la respuesta al error en baloncesto. Este test es totalmente <strong>anónimo</strong> y servirá para entender tu preparación y reacción ante el fallo.
+          </p>
+          <div className="space-y-3 pt-4">
+            <button 
+              onClick={() => setView('test')}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-4 rounded-xl transition-all flex items-center justify-center gap-2 group"
+            >
+              Comenzar Test <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button 
+              onClick={() => setView('admin-login')}
+              className="w-full text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors"
+            >
+              Acceso Entrenador
+            </button>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  if (view === 'survey') {
-    const q = QUESTIONS[currentStep];
-    const progress = ((currentStep + 1) / QUESTIONS.length) * 100;
-
+  if (view === 'admin-login') {
     return (
-      <div className="min-h-screen bg-white flex flex-col">
-        {/* Header */}
-        <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.section}</span>
-            <div className="flex items-center gap-1 mt-1">
-               <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-               <span className="text-xs font-bold text-slate-900">Pregunta {currentStep + 1} de {QUESTIONS.length}</span>
-            </div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-sm w-full bg-white rounded-3xl shadow-xl p-8">
+          <button onClick={() => setView('welcome')} className="mb-6 text-slate-400 flex items-center gap-1 hover:text-slate-600">
+            <ChevronLeft className="w-4 h-4" /> Volver
+          </button>
+          <div className="flex items-center gap-3 mb-6">
+            <Lock className="text-slate-800 w-6 h-6" />
+            <h2 className="text-xl font-bold text-slate-800">Panel de Control</h2>
           </div>
+          <input 
+            type="password" 
+            placeholder="Introduce la contraseña"
+            className="w-full p-4 bg-slate-100 rounded-xl mb-4 outline-none focus:ring-2 ring-orange-500"
+            value={adminPass}
+            onChange={(e) => setAdminPass(e.target.value)}
+          />
           <button 
-            onClick={() => setView('welcome')}
-            className="p-2 text-slate-400 hover:text-slate-900 transition-colors"
+            onClick={() => {
+              if (adminPass === "fap2026") { // Contraseña por defecto
+                setIsAdminAuth(true);
+                setView('admin');
+              } else {
+                alert("Contraseña incorrecta");
+              }
+            }}
+            className="w-full bg-slate-800 text-white py-4 rounded-xl font-bold hover:bg-slate-900"
           >
-            <LogOut className="w-5 h-5" />
+            Entrar
           </button>
         </div>
+      </div>
+    );
+  }
 
-        {/* Progress Bar */}
-        <div className="h-1 w-full bg-slate-100">
-          <div className="h-full bg-orange-500 transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div>
-        </div>
+  if (view === 'test') {
+    const item = ITEMS[currentStep];
+    const progress = ((currentStep + 1) / ITEMS.length) * 100;
 
-        {/* Question Area */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 max-w-2xl mx-auto w-full">
-          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 text-center mb-16 leading-tight">
-            {q.text}
-          </h2>
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 md:p-8 flex flex-col items-center">
+        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[600px]">
+          {/* Progress Bar */}
+          <div className="h-2 bg-slate-100 w-full">
+            <div 
+              className="h-full bg-orange-500 transition-all duration-300" 
+              style={{ width: `${progress}%` }}
+            />
+          </div>
 
-          <div className="w-full space-y-8">
-            <div className="flex justify-between items-center px-4">
-              {[0, 1, 2, 3, 4].map(val => (
+          <div className="p-8 flex-1 flex flex-col">
+            <div className="flex justify-between items-center mb-8">
+              <span className="text-xs font-bold uppercase tracking-wider text-orange-600 bg-orange-50 px-3 py-1 rounded-full">
+                {item.section}
+              </span>
+              <span className="text-slate-400 font-medium text-sm">
+                {currentStep + 1} de {ITEMS.length}
+              </span>
+            </div>
+
+            <h2 className="text-xl md:text-2xl font-bold text-slate-800 mb-12">
+              {item.text}
+            </h2>
+
+            <div className="grid grid-cols-1 gap-3 mt-auto">
+              {[0, 1, 2, 3, 4].map((val) => (
                 <button
                   key={val}
-                  onClick={() => setAnswers({...answers, [q.id]: val})}
-                  className={`group relative flex flex-col items-center transition-all duration-300 ${answers[q.id] === val ? 'scale-110' : 'hover:scale-105'}`}
+                  onClick={() => handleAnswer(item.id, val)}
+                  className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                    answers[item.id] === val 
+                    ? 'border-orange-500 bg-orange-50 text-orange-700' 
+                    : 'border-slate-100 hover:border-slate-200 text-slate-600'
+                  }`}
                 >
-                  <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center border-2 font-black text-lg transition-all
-                    ${answers[q.id] === val 
-                      ? 'bg-slate-900 border-slate-900 text-white shadow-xl rotate-3' 
-                      : 'bg-white border-slate-100 text-slate-300 group-hover:border-slate-300 group-hover:text-slate-500'}`}
-                  >
-                    {val}
+                  <span className="font-semibold">
+                    {val === 0 ? 'Nada / Nunca' : 
+                     val === 1 ? 'Poco / Rara vez' : 
+                     val === 2 ? 'Algo / A veces' : 
+                     val === 3 ? 'Bastante / Casi siempre' : 
+                     'Mucho / Siempre'}
+                  </span>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                    answers[item.id] === val ? 'border-orange-500' : 'border-slate-200'
+                  }`}>
+                    {answers[item.id] === val && <div className="w-3 h-3 bg-orange-500 rounded-full" />}
                   </div>
                 </button>
               ))}
             </div>
-            <div className="flex justify-between px-6 text-[10px] font-black text-slate-300 uppercase tracking-widest">
-              <span>Nunca</span>
-              <span>A veces</span>
-              <span>Siempre</span>
-            </div>
           </div>
-        </div>
 
-        {/* Footer Nav */}
-        <div className="p-6 bg-slate-50/50 backdrop-blur-md border-t border-slate-100 flex gap-4 sticky bottom-0">
-          <button 
-            onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-            className={`flex-1 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-400 flex items-center justify-center gap-2 hover:bg-slate-100 transition-all ${currentStep === 0 ? 'opacity-0 pointer-events-none' : ''}`}
-          >
-            <ChevronLeft className="w-4 h-4" /> Anterior
-          </button>
-          
-          {currentStep < QUESTIONS.length - 1 ? (
-            <button 
-              disabled={answers[q.id] === undefined}
-              onClick={() => setCurrentStep(currentStep + 1)}
-              className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-black transition-all disabled:opacity-20 active:scale-95"
+          <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between gap-4">
+            <button
+              disabled={currentStep === 0}
+              onClick={() => setCurrentStep(s => s - 1)}
+              className="px-6 py-3 text-slate-400 font-bold disabled:opacity-30"
             >
-              Siguiente <ChevronRight className="w-4 h-4" />
+              Anterior
             </button>
-          ) : (
-            <button 
-              disabled={loading || answers[q.id] === undefined}
-              onClick={handleSave}
-              className="flex-[2] py-4 bg-orange-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-orange-700 transition-all disabled:opacity-20 active:scale-95"
-            >
-              {loading ? 'Procesando...' : 'Finalizar Test'} <Award className="w-5 h-5" />
-            </button>
-          )}
+            {currentStep < ITEMS.length - 1 ? (
+              <button
+                disabled={answers[item.id] === undefined}
+                onClick={() => setCurrentStep(s => s + 1)}
+                className="px-8 py-3 bg-slate-800 text-white rounded-xl font-bold disabled:opacity-50 hover:bg-slate-900 transition-colors"
+              >
+                Siguiente
+              </button>
+            ) : (
+              <button
+                disabled={isSubmitting || answers[item.id] === undefined}
+                onClick={submitTest}
+                className="px-8 py-3 bg-orange-600 text-white rounded-xl font-bold disabled:opacity-50 hover:bg-orange-700"
+              >
+                {isSubmitting ? 'Guardando...' : 'Finalizar Test'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
   }
 
   if (view === 'results') {
-    const results = calculateResults(answers);
+    const finalResults = calculateSubscales(answers);
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white">
-        <div className="max-w-md w-full bg-slate-800 rounded-[3rem] p-10 shadow-2xl border border-slate-700 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-orange-500 via-red-500 to-orange-500"></div>
-          
-          <div className="flex items-center gap-3 mb-10">
-            <div className="bg-orange-500/20 p-3 rounded-2xl">
-              <Activity className="w-6 h-6 text-orange-500" />
+      <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center">
+        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl p-8">
+          <div className="text-center mb-10">
+            <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="text-green-600 w-10 h-10" />
             </div>
-            <div>
-              <h2 className="text-2xl font-black italic tracking-tighter uppercase">Perfil de Resiliencia</h2>
-              <p className="text-[10px] text-slate-500 font-bold tracking-widest uppercase">Resultados por Escala (0-4)</p>
-            </div>
+            <h2 className="text-2xl font-bold text-slate-800">¡Test Completado!</h2>
+            <p className="text-slate-500">Aquí tienes un resumen de tus resultados hoy.</p>
           </div>
 
-          <div className="space-y-8 mb-12">
-            {Object.keys(SCALES).map(key => (
-              <div key={key} className="group">
-                <div className="flex justify-between items-end mb-2">
-                  <span className="text-xs font-black uppercase text-slate-400 tracking-wider group-hover:text-slate-200 transition-colors">
-                    {SCALES[key].name}
-                  </span>
-                  <span className="text-xl font-black text-white italic">{results[key]}</span>
+          <div className="space-y-6">
+            {finalResults.map((res, i) => {
+              const interpretation = getInterpretation(res.score);
+              return (
+                <div key={i} className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-bold text-slate-700">{res.name}</h3>
+                    <span className={`text-xs font-bold px-2 py-1 rounded-md ${interpretation.bg} ${interpretation.color}`}>
+                      {interpretation.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 h-3 bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-1000 ${res.score > 2.6 ? 'bg-green-500' : res.score > 1.3 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                        style={{ width: `${(res.score / 4) * 100}%` }}
+                      />
+                    </div>
+                    <span className="font-bold text-slate-800 tabular-nums">{res.score.toFixed(2)}</span>
+                  </div>
                 </div>
-                <div className="h-3 bg-slate-700 rounded-full overflow-hidden p-0.5">
-                  <div 
-                    className={`${SCALES[key].color} h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(0,0,0,0.3)]`} 
-                    style={{ width: `${(results[key] / 4) * 100}%` }}
-                  ></div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+
+          <div className="mt-10 p-6 bg-blue-50 rounded-2xl flex gap-4">
+            <AlertCircle className="text-blue-500 w-6 h-6 flex-shrink-0" />
+            <div className="text-sm text-blue-800 leading-relaxed">
+              <p className="font-bold mb-1">Nota interpretativa:</p>
+              El fallo es parte del aprendizaje y no solo una derrota. Un nivel alto en "Disponibilidad Post-error" indica que eres capaz de reengancharte rápido al juego sin rumiar. Si tienes niveles bajos en "Reactividad", intenta apoyarte más en las claves funcionales de tu entrenador.
+            </div>
           </div>
 
           <button 
             onClick={() => window.location.reload()}
-            className="w-full py-5 bg-white text-slate-900 rounded-2xl font-black uppercase text-sm tracking-widest hover:bg-slate-100 transition-all shadow-xl active:scale-95"
+            className="w-full mt-8 py-4 text-slate-500 font-semibold border-2 border-slate-100 rounded-xl hover:bg-slate-50 transition-colors"
           >
-            Nueva Evaluación
+            Cerrar Aplicación
           </button>
         </div>
-        <p className="mt-8 text-slate-500 text-[10px] uppercase font-black tracking-[0.3em]">CFEB-FAP Protocol v2.0</p>
       </div>
     );
   }
 
-  if (view === 'admin') return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-12">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="bg-slate-900 p-3 rounded-2xl text-white">
-              <Database className="w-6 h-6" />
+  if (view === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 md:p-10">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-800">Resultados del Equipo</h1>
+              <p className="text-slate-500">Gestión de datos en la nube (CFEB-FAP)</p>
             </div>
-            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900">Cloud Storage Staff</h2>
+            <div className="flex gap-3">
+              <button 
+                onClick={exportCSV}
+                className="bg-orange-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-700 shadow-lg shadow-orange-200"
+              >
+                <Download className="w-5 h-5" /> Exportar CSV
+              </button>
+              <button 
+                onClick={() => setView('welcome')}
+                className="bg-white text-slate-600 px-6 py-3 rounded-xl font-bold border border-slate-200 hover:bg-slate-50"
+              >
+                Salir
+              </button>
+            </div>
           </div>
-          <button 
-            onClick={() => setView('welcome')}
-            className="px-6 py-2 bg-white border border-slate-200 text-slate-500 rounded-xl font-bold text-xs uppercase hover:bg-slate-100 transition-all"
-          >
-            Cerrar Sesión
-          </button>
-        </div>
 
-        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest">
-                  <th className="p-6">Jugador (UUID)</th>
-                  <th className="p-6">Fecha/Hora</th>
-                  <th className="p-6 text-center">Prep. Mental</th>
-                  <th className="p-6 text-center">Reactividad</th>
-                  <th className="p-6 text-center">Disponibilidad</th>
-                  <th className="p-6 text-center">Apoyo Staff</th>
-                </tr>
-              </thead>
-              <tbody>
-                {adminData.length === 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-400 text-sm font-bold uppercase mb-1">Muestra Actual</p>
+              <h3 className="text-3xl font-black text-slate-800">{allData.length} <span className="text-lg font-normal text-slate-400">test</span></h3>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-400 text-sm font-bold uppercase mb-1">Promedio CCR1</p>
+              <h3 className="text-3xl font-black text-blue-600">
+                {(allData.reduce((acc, d) => acc + d.results[1].score, 0) / (allData.length || 1)).toFixed(2)}
+              </h3>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-400 text-sm font-bold uppercase mb-1">Promedio CCR2</p>
+              <h3 className="text-3xl font-black text-green-600">
+                {(allData.reduce((acc, d) => acc + d.results[2].score, 0) / (allData.length || 1)).toFixed(2)}
+              </h3>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <p className="text-slate-400 text-sm font-bold uppercase mb-1">Apoyo Entrenador</p>
+              <h3 className="text-3xl font-black text-orange-600">
+                {(allData.reduce((acc, d) => acc + d.results[3].score, 0) / (allData.length || 1)).toFixed(2)}
+              </h3>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-slate-100">
                   <tr>
-                    <td colSpan="6" className="p-20 text-center text-slate-300 italic font-medium">No se han encontrado registros en Firebase.</td>
+                    <th className="px-6 py-4 text-slate-400 text-xs font-bold uppercase tracking-wider">Fecha</th>
+                    <th className="px-6 py-4 text-slate-400 text-xs font-bold uppercase tracking-wider">ID Usuario</th>
+                    {SUBESCALAS.map((s, i) => (
+                      <th key={i} className="px-6 py-4 text-slate-400 text-xs font-bold uppercase tracking-wider">{s.name}</th>
+                    ))}
                   </tr>
-                ) : adminData.map(d => (
-                  <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                    <td className="p-6 flex items-center gap-3">
-                      <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
-                        <User className="w-4 h-4" />
-                      </div>
-                      <span className="font-mono text-[10px] text-slate-400">...{d.userId?.slice(-6)}</span>
-                    </td>
-                    <td className="p-6">
-                      <div className="font-bold text-slate-800">{new Date(d.timestamp).toLocaleDateString()}</div>
-                      <div className="text-[10px] text-slate-400">{new Date(d.timestamp).toLocaleTimeString()}</div>
-                    </td>
-                    <td className="p-6 text-center font-black text-slate-900">{d.results?.PREPARACION}</td>
-                    <td className="p-6 text-center">
-                      <span className={`px-3 py-1 rounded-full font-black ${d.results?.REACTIVIDAD > 2.5 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                        {d.results?.REACTIVIDAD}
-                      </span>
-                    </td>
-                    <td className="p-6 text-center font-black text-slate-900">{d.results?.DISPONIBILIDAD}</td>
-                    <td className="p-6 text-center font-bold text-slate-500">{d.results?.ENTRENADOR}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {allData.sort((a,b) => b.timestamp - a.timestamp).map((entry, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-slate-600 whitespace-nowrap">
+                        {entry.timestamp?.toDate().toLocaleString() || 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 text-sm font-mono text-slate-400">
+                        {entry.userId.substring(0, 8)}...
+                      </td>
+                      {entry.results.map((r, i) => (
+                        <td key={i} className="px-6 py-4">
+                          <span className={`font-bold tabular-nums ${r.score < 1.34 ? 'text-red-500' : r.score > 2.66 ? 'text-green-600' : 'text-slate-700'}`}>
+                            {r.score.toFixed(2)}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {allData.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-20 text-center text-slate-400 italic">
+                        No hay respuestas registradas todavía.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  
+  return null;
 }
