@@ -4,12 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CFEB-FAP | Test de Resiliencia en Baloncesto</title>
-    <!-- Tailwind CSS para el diseño -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React y Babel para ejecutar el código JSX directamente -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+
+        // Exponer a window para que Babel pueda usarlos
+        window.FB = { initializeApp, getFirestore, collection, addDoc, getDocs, query, orderBy, getAuth, signInAnonymously };
+    </script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; }
@@ -19,17 +28,21 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Definición manual de iconos SVG sencillos para evitar errores de librería externa
-        const TrophyIcon = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-        );
+        // --- CONFIGURACIÓN (Sustituir por tus datos si no usas variables de entorno) ---
+        const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : {
+            apiKey: "TU_API_KEY",
+            authDomain: "TU_PROYECTO.firebaseapp.com",
+            projectId: "TU_PROYECTO_ID",
+            storageBucket: "TU_PROYECTO.appspot.com",
+            messagingSenderId: "TU_SENDER_ID",
+            appId: "TU_APP_ID"
+        };
+        const appId = window.__app_id || 'fap-basketball-app';
 
-        const ChevronLeftIcon = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        );
+        // --- ICONOS ---
+        const TrophyIcon = () => (<svg className="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>);
 
-        // --- CONSTANTES ---
-        const ZENODO_DOI = "10.5281/zenodo.18862811";
+        // --- PREGUNTAS ---
         const QUESTIONS = [
             { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES", inverted: false },
             { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "ANTES", inverted: true },
@@ -56,97 +69,105 @@
             PREPARACION: { name: "Preparación Pre-partido", items: [1, 2, 3, 4, 5] },
             REACTIVIDAD: { name: "Reactividad al Error (CCR1)", items: [6, 7, 8, 10, 16, 18] },
             DISPONIBILIDAD: { name: "Disponibilidad Post-error (CCR2)", items: [4, 5, 9, 11, 17, 19] },
-            ENTRENADOR: { name: "Entrenador (Apoyo Funcional)", items: [12, 13, 14, 15] },
+            ENTRENADOR: { name: "Apoyo del Entrenador", items: [12, 13, 14, 15] },
         };
 
         function App() {
             const [view, setView] = React.useState('welcome');
             const [currentStep, setCurrentStep] = React.useState(0);
             const [answers, setAnswers] = React.useState({});
+            const [db, setDb] = React.useState(null);
+            const [user, setUser] = React.useState(null);
+            const [adminData, setAdminData] = React.useState([]);
+            const [adminPass, setAdminPass] = React.useState("");
 
-            const calculateResults = (dataAnswers) => {
-                const results = {};
+            React.useEffect(() => {
+                const init = async () => {
+                    const app = FB.initializeApp(firebaseConfig);
+                    const _db = FB.getFirestore(app);
+                    const _auth = FB.getAuth(app);
+                    const cred = await FB.signInAnonymously(_auth);
+                    setDb(_db);
+                    setUser(cred.user);
+                };
+                init();
+            }, []);
+
+            const calculateResults = (ans) => {
+                const res = {};
                 Object.keys(SCALES).forEach(key => {
-                    const scale = SCALES[key];
-                    const scores = scale.items.map(id => {
+                    const items = SCALES[key].items;
+                    const scores = items.map(id => {
                         const q = QUESTIONS.find(q => q.id === id);
-                        const val = dataAnswers[id];
-                        return q.inverted ? 4 - val : val;
+                        return q.inverted ? 4 - ans[id] : ans[id];
                     });
-                    results[key] = parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2));
+                    res[key] = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2);
                 });
-                return results;
+                return res;
             };
 
-            const getInterpretation = (score) => {
-                if (score >= 2.67) return { label: "Alto", color: "text-green-600" };
-                if (score >= 1.34) return { label: "Medio", color: "text-yellow-600" };
-                return { label: "Bajo", color: "text-red-600" };
+            const handleFinish = async () => {
+                const results = calculateResults(answers);
+                if (db && user) {
+                    const coll = FB.collection(db, 'artifacts', appId, 'public', 'data', 'responses');
+                    await FB.addDoc(coll, {
+                        userId: user.uid,
+                        timestamp: new Date().toISOString(),
+                        answers,
+                        results
+                    });
+                }
+                setView('results');
             };
 
-            if (view === 'welcome') {
-                return (
-                    <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
-                        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
-                            <div className="bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-600">
-                                <TrophyIcon />
-                            </div>
-                            <h1 className="text-2xl font-black text-slate-800 mb-1">CFEB-FAP</h1>
-                            <p className="text-slate-500 text-sm mb-6 italic">"El fallo es parte del aprendizaje y no solo una derrota."</p>
-                            
-                            <button 
-                                onClick={() => setView('survey')}
-                                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black transition shadow-xl mb-6"
-                            >
-                                Comenzar Evaluación
-                            </button>
+            const loadAdmin = async () => {
+                if (adminPass !== "CFEB2026") return alert("Acceso denegado");
+                const coll = FB.collection(db, 'artifacts', appId, 'public', 'data', 'responses');
+                const snap = await FB.getDocs(coll);
+                setAdminData(snap.docs.map(d => ({id: d.id, ...d.data()})));
+                setView('admin');
+            };
 
-                            <div className="pt-6 border-t border-slate-50">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Registro Científico</p>
-                                <span className="inline-flex items-center px-3 py-1 bg-slate-100 rounded-full text-[10px] font-mono text-slate-500">
-                                    DOI: {ZENODO_DOI}
-                                </span>
-                            </div>
+            if (view === 'welcome') return (
+                <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50">
+                    <div className="max-w-md w-full bg-white rounded-[3rem] shadow-2xl p-10 text-center border border-slate-100">
+                        <div className="bg-orange-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8 text-orange-600">
+                            <TrophyIcon />
+                        </div>
+                        <h1 className="text-3xl font-black text-slate-800 mb-2">CFEB-FAP</h1>
+                        <p className="text-slate-500 text-sm mb-10 italic">"El fallo es parte del aprendizaje y no solo una derrota."</p>
+                        <button onClick={() => setView('survey')} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl mb-6">Comenzar Evaluación</button>
+                        
+                        <div className="mt-12 pt-8 border-t border-slate-50">
+                            <input type="password" placeholder="Acceso Staff" className="w-full mb-3 p-3 border rounded-xl text-center bg-slate-50 outline-none text-sm" onChange={e => setAdminPass(e.target.value)} />
+                            <button onClick={loadAdmin} className="text-slate-400 text-xs font-bold hover:text-slate-600">PANEL DE CONTROL</button>
                         </div>
                     </div>
-                );
-            }
+                </div>
+            );
 
             if (view === 'survey') {
                 const q = QUESTIONS[currentStep];
                 return (
-                    <div className="min-h-screen bg-white p-4 flex flex-col items-center">
-                        <div className="max-w-xl w-full pt-10">
-                            <div className="flex justify-between items-center mb-4 text-[10px] font-black text-slate-400 uppercase">
-                                <span>{q.section}</span>
-                                <span>{currentStep + 1}/{QUESTIONS.length}</span>
+                    <div className="min-h-screen bg-white p-6 flex flex-col items-center">
+                        <div className="max-w-xl w-full pt-12">
+                            <div className="flex justify-between text-[11px] font-black text-slate-400 mb-4"><span>{q.section}</span><span>{currentStep + 1}/{QUESTIONS.length}</span></div>
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full mb-16 overflow-hidden">
+                                <div className="bg-orange-500 h-full transition-all" style={{width: `${((currentStep+1)/QUESTIONS.length)*100}%`}}></div>
                             </div>
-                            <div className="w-full bg-slate-100 h-1 rounded-full mb-12">
-                                <div className="bg-orange-500 h-full transition-all" style={{ width: `${((currentStep+1)/QUESTIONS.length)*100}%` }}></div>
-                            </div>
-                            <h2 className="text-xl md:text-2xl font-bold text-slate-900 mb-16 text-center leading-tight">{q.text}</h2>
-                            <div className="flex justify-between max-w-sm mx-auto mb-4">
-                                {[0, 1, 2, 3, 4].map(val => (
-                                    <button 
-                                        key={val} 
-                                        onClick={() => setAnswers({...answers, [q.id]: val})}
-                                        className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl border-2 flex items-center justify-center text-lg font-black transition-all ${answers[q.id] === val ? 'border-orange-500 bg-orange-500 text-white' : 'border-slate-100 text-slate-300'}`}
-                                    >
-                                        {val}
-                                    </button>
+                            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-20 text-center leading-tight">{q.text}</h2>
+                            <div className="flex justify-between max-w-sm mx-auto mb-6">
+                                {[0, 1, 2, 3, 4].map(v => (
+                                    <button key={v} onClick={() => setAnswers({...answers, [q.id]: v})} className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === v ? 'border-orange-500 bg-orange-500 text-white scale-110 shadow-lg' : 'border-slate-100 text-slate-300'}`}>{v}</button>
                                 ))}
                             </div>
-                            <div className="flex justify-between text-[10px] text-slate-400 font-black uppercase max-w-sm mx-auto px-1">
-                                <span>Nunca</span><span>Siempre</span>
-                            </div>
-                            <div className="flex justify-between gap-4 fixed bottom-10 left-0 right-0 max-w-xl mx-auto px-4">
-                                <button onClick={() => setCurrentStep(Math.max(0, currentStep-1))} className={`p-4 ${currentStep===0?'invisible':''}`}>
-                                    <ChevronLeftIcon />
-                                </button>
+                            <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase max-w-sm mx-auto px-2"><span>Nunca</span><span>Siempre</span></div>
+                            <div className="flex gap-4 fixed bottom-12 left-0 right-0 max-w-xl mx-auto px-6">
+                                <button onClick={() => setCurrentStep(Math.max(0, currentStep-1))} className={`p-4 bg-slate-50 rounded-2xl ${currentStep === 0 ? 'invisible' : ''}`}>←</button>
                                 {currentStep < QUESTIONS.length - 1 ? (
-                                    <button disabled={answers[q.id]===undefined} onClick={() => setCurrentStep(currentStep+1)} className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-bold disabled:opacity-20">Siguiente</button>
+                                    <button disabled={answers[q.id] === undefined} onClick={() => setCurrentStep(currentStep + 1)} className="flex-1 py-5 bg-slate-900 text-white rounded-2xl font-bold disabled:opacity-20 shadow-xl">Siguiente</button>
                                 ) : (
-                                    <button onClick={() => setView('results')} className="flex-1 py-4 bg-orange-600 text-white rounded-2xl font-bold">Ver Resultados</button>
+                                    <button disabled={answers[q.id] === undefined} onClick={handleFinish} className="flex-1 py-5 bg-orange-600 text-white rounded-2xl font-bold shadow-xl">Finalizar y Guardar</button>
                                 )}
                             </div>
                         </div>
@@ -157,36 +178,55 @@
             if (view === 'results') {
                 const results = calculateResults(answers);
                 return (
-                    <div className="min-h-screen bg-slate-50 p-4 md:p-8 flex flex-col items-center">
-                        <div className="max-w-2xl w-full bg-white rounded-[2rem] shadow-2xl overflow-hidden">
-                            <div className="bg-slate-900 p-8 text-white">
-                                <h1 className="text-2xl font-black">Tu Informe de Resiliencia</h1>
-                                <p className="text-slate-400 text-sm">Protocolo CFEB-FAP (DOI: {ZENODO_DOI})</p>
+                    <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center">
+                        <div className="max-w-2xl w-full bg-white rounded-[3rem] shadow-2xl p-10">
+                            <h1 className="text-3xl font-black mb-8 text-center text-slate-800">Resultados CFEB-FAP</h1>
+                            <div className="space-y-6">
+                                {Object.keys(SCALES).map(k => (
+                                    <div key={k} className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                                        <div className="flex justify-between mb-2">
+                                            <span className="text-xs font-black text-slate-400 uppercase">{SCALES[k].name}</span>
+                                            <span className="font-black text-xl">{results[k]}</span>
+                                        </div>
+                                        <div className="h-3 bg-white rounded-full overflow-hidden border border-slate-200">
+                                            <div className="h-full bg-slate-900" style={{width: `${(results[k]/4)*100}%`}}></div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                            <div className="p-8">
-                                <div className="space-y-6">
-                                    {Object.keys(SCALES).map(key => {
-                                        const score = results[key];
-                                        const interp = getInterpretation(score);
-                                        return (
-                                            <div key={key} className="p-4 bg-slate-50 rounded-2xl">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <span className="text-xs font-black text-slate-500 uppercase">{SCALES[key].name}</span>
-                                                    <span className={`text-xs font-bold ${interp.color}`}>{interp.label} ({score})</span>
-                                                </div>
-                                                <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-100">
-                                                    <div className="h-full bg-slate-900" style={{width:`${(score/4)*100}%`}}></div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                <button onClick={() => window.location.reload()} className="w-full mt-8 py-4 bg-slate-900 text-white rounded-2xl font-bold">Finalizar</button>
-                            </div>
+                            <button onClick={() => window.location.reload()} className="w-full mt-10 py-5 bg-slate-900 text-white rounded-2xl font-bold">Cerrar</button>
                         </div>
                     </div>
                 );
             }
+
+            if (view === 'admin') return (
+                <div className="min-h-screen bg-slate-50 p-6">
+                    <div className="max-w-5xl mx-auto">
+                        <div className="flex justify-between items-center mb-10">
+                            <h1 className="text-3xl font-black">Panel de Datos Estudio</h1>
+                            <button onClick={() => setView('welcome')} className="text-sm font-bold text-slate-400">VOLVER</button>
+                        </div>
+                        <div className="bg-white rounded-[2rem] shadow-sm overflow-x-auto border border-slate-100 p-4">
+                            <table className="w-full text-left text-sm">
+                                <thead>
+                                    <tr className="border-b text-slate-400"><th className="p-4 uppercase text-[10px] font-black">ID Atleta</th><th className="p-4 uppercase text-[10px] font-black">Timestamp</th><th className="p-4 uppercase text-[10px] font-black">Reactividad (CCR1)</th><th className="p-4 uppercase text-[10px] font-black">Disponibilidad (CCR2)</th></tr>
+                                </thead>
+                                <tbody>
+                                    {adminData.map(d => (
+                                        <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50">
+                                            <td className="p-4 font-mono text-xs">...{d.userId.slice(-5)}</td>
+                                            <td className="p-4 text-xs">{new Date(d.timestamp).toLocaleString()}</td>
+                                            <td className="p-4 font-bold">{d.results.REACTIVIDAD}</td>
+                                            <td className="p-4 font-bold">{d.results.DISPONIBILIDAD}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
