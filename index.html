@@ -3,53 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CFEB-FAP | Análisis del Error</title>
+    <title>CFEB-FAP | Gestión del Error</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; }
-        .card-active:active { transform: scale(0.96); }
-        .transition-width { transition: width 0.4s ease; }
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .slide-up { animation: slideUp 0.4s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .tap-active:active { transform: scale(0.96); }
+        .progress-bar { transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-50 text-slate-900 overflow-x-hidden">
 
-    <div id="app" class="min-h-screen flex flex-col max-w-md mx-auto bg-white shadow-2xl shadow-slate-200">
-        <!-- Header -->
-        <header class="p-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/80 backdrop-blur-md z-10">
-            <div class="flex items-center gap-2">
-                <div class="bg-orange-600 p-1.5 rounded-lg">
-                    <i data-lucide="basketball" class="w-5 h-5 text-white"></i>
+    <div id="app" class="min-h-screen flex flex-col max-w-lg mx-auto bg-white shadow-2xl shadow-slate-200">
+        <!-- Cabecera -->
+        <header class="p-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md z-50">
+            <div class="flex items-center gap-3">
+                <div class="bg-orange-600 p-2 rounded-xl shadow-lg shadow-orange-100">
+                    <i data-lucide="basketball" class="w-6 h-6 text-white"></i>
                 </div>
-                <h1 class="font-extrabold text-lg tracking-tight">CFEB<span class="text-orange-600">-FAP</span></h1>
+                <div>
+                    <h1 class="font-extrabold text-lg leading-none tracking-tight">CFEB-FAP</h1>
+                    <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Análisis Funcional</p>
+                </div>
             </div>
-            <div id="status" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <span class="w-2 h-2 bg-green-500 rounded-full"></span> Anónimo
+            <div class="flex items-center gap-1.5 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span class="text-[9px] font-black text-green-700 tracking-wider">NUBE OK</span>
             </div>
         </header>
 
-        <!-- Contenido Dinámico -->
-        <main id="content" class="flex-grow p-6"></main>
+        <!-- Contenedor Dinámico -->
+        <main id="main-view" class="flex-grow p-6 flex flex-col"></main>
 
-        <footer class="p-6 text-center border-t border-slate-50">
-            <p class="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Protocolo FAP · Jorge Maroto Cuadrado</p>
+        <!-- Pie de página -->
+        <footer class="p-6 text-center border-t border-slate-50 bg-slate-50/20">
+            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-loose">
+                Protocolo CFEB-FAP · Jorge Maroto Cuadrado<br>Vercel & Firebase Cloud Storage
+            </p>
         </footer>
     </div>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase Integration -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, getDocs, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Configuración (Se puede inyectar vía Vercel o pegar aquí tus claves de Firebase)
+        // Configuración Global
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = window.__app_id || 'basket-fap-v1';
+        const appId = window.__app_id || 'cfeb-fap-final-deployment';
 
+        // 19 Ítems según Protocolo PDF
         const ITEMS = [
             { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "Pre" },
             { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "Pre", inv: true },
@@ -72,167 +82,225 @@
             { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", cat: "CCR2" }
         ];
 
-        let state = { view: 'home', index: 0, answers: {}, user: null };
+        let state = { view: 'home', currentIdx: 0, answers: {}, user: null };
 
-        function render() {
-            const root = document.getElementById('content');
+        const render = () => {
+            const root = document.getElementById('main-view');
             root.innerHTML = '';
 
             if (state.view === 'home') {
                 root.innerHTML = `
-                    <div class="space-y-6 pt-8 animate-in fade-in duration-500">
-                        <h2 class="text-3xl font-extrabold leading-tight text-slate-800">El fallo es parte del aprendizaje.</h2>
-                        <p class="text-slate-500 text-sm">Este cuestionario es 100% anónimo. Tus datos nos ayudarán a mejorar el apoyo táctico y emocional del equipo.</p>
-                        <button onclick="setView('quiz')" class="w-full bg-slate-900 text-white font-bold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors">
-                            Comenzar Evaluación <i data-lucide="arrow-right" class="w-5 h-5"></i>
-                        </button>
-                        <button onclick="setView('admin')" class="w-full text-slate-400 font-bold py-2 text-[10px] uppercase tracking-widest flex items-center justify-center gap-1">
-                            <i data-lucide="lock" class="w-3 h-3"></i> Acceso Administrador
-                        </button>
+                    <div class="space-y-8 pt-8 slide-up text-center">
+                        <div class="bg-orange-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-inner border border-orange-100">
+                             <i data-lucide="brain-circuit" class="w-12 h-12 text-orange-600"></i>
+                        </div>
+                        <div class="space-y-3">
+                            <h2 class="text-3xl font-black text-slate-900 leading-tight">Tu mentalidad tras el error.</h2>
+                            <p class="text-slate-400 text-sm px-4">Evaluación de la respuesta emocional y funcional ante el fallo en competición.</p>
+                        </div>
+                        <div class="pt-6 space-y-4">
+                            <button onclick="window.go('quiz')" class="tap-active w-full bg-slate-900 text-white font-extrabold py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3">
+                                Comenzar Test <i data-lucide="play-circle" class="w-6 h-6"></i>
+                            </button>
+                            <button onclick="window.go('admin')" class="w-full text-slate-300 font-bold py-2 text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                                <i data-lucide="lock" class="w-3 h-3"></i> Acceso Administrador
+                            </button>
+                        </div>
                     </div>
                 `;
             } else if (state.view === 'quiz') {
-                const item = ITEMS[state.index];
-                const progress = (state.index / ITEMS.length) * 100;
+                const item = ITEMS[state.currentIdx];
+                const progress = (state.currentIdx / ITEMS.length) * 100;
                 root.innerHTML = `
-                    <div class="animate-in slide-in-from-right duration-300">
-                        <div class="mb-8">
-                            <div class="flex justify-between items-end mb-2">
-                                <span class="text-[10px] font-black text-orange-600 uppercase tracking-tighter">Ítem ${state.index + 1} de 19</span>
-                                <span class="text-[10px] font-bold text-slate-300">${Math.round(progress)}%</span>
+                    <div class="slide-up flex flex-col h-full">
+                        <div class="mb-10">
+                            <div class="flex justify-between items-end mb-3">
+                                <span class="text-[10px] font-black text-orange-600 uppercase tracking-widest">Ítem ${state.currentIdx + 1} de 19</span>
+                                <span class="text-xs font-bold text-slate-300">${Math.round(progress)}%</span>
                             </div>
-                            <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                <div class="bg-orange-600 h-full transition-width" style="width: ${progress}%"></div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-orange-600 h-full progress-bar" style="width: ${progress}%"></div>
                             </div>
                         </div>
-                        <h3 class="text-xl font-bold text-slate-800 mb-10 italic">"${item.text}"</h3>
-                        <div class="grid gap-3">
-                            ${[0,1,2,3,4].map(v => `
-                                <button onclick="next(${v})" class="card-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left flex justify-between items-center hover:border-orange-500 transition-all group">
-                                    <span class="font-bold text-slate-700">${v === 0 ? '0 - Nada' : v === 4 ? '4 - Mucho' : v}</span>
-                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-orange-500"></i>
-                                </button>
-                            `).join('')}
+                        
+                        <div class="flex-grow">
+                            <h3 class="text-2xl font-bold text-slate-800 leading-tight mb-12 italic">"${item.text}"</h3>
+                            
+                            <div class="grid gap-3">
+                                ${[0, 1, 2, 3, 4].map(v => `
+                                    <button onclick="window.save(${v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left flex justify-between items-center hover:border-orange-500 hover:bg-orange-50 transition-all">
+                                        <div class="flex items-center gap-4">
+                                            <span class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 text-slate-500 font-bold text-sm">${v}</span>
+                                            <span class="font-bold text-slate-700">${v === 0 ? 'Nada' : v === 4 ? 'Mucho' : v === 2 ? 'A veces' : ''}</span>
+                                        </div>
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200"></i>
+                                    </button>
+                                `).join('')}
+                            </div>
                         </div>
                     </div>
                 `;
             } else if (state.view === 'report') {
-                const results = calculate(state.answers);
+                const results = window.calculate(state.answers);
+                const profile = window.interpret(results);
                 root.innerHTML = `
-                    <div class="space-y-6 animate-in zoom-in duration-500">
-                        <div class="text-center">
-                            <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 text-orange-600">
-                                <i data-lucide="award" class="w-8 h-8"></i>
+                    <div class="slide-up space-y-6">
+                        <div class="text-center py-4">
+                            <i data-lucide="check-circle" class="w-14 h-14 text-green-500 mx-auto mb-4"></i>
+                            <h2 class="text-2xl font-black text-slate-900 tracking-tight">Análisis Completado</h2>
+                            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Informe Emocional del Jugador</p>
+                        </div>
+
+                        <div class="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden">
+                            <div class="absolute top-0 right-0 p-8 opacity-10">
+                                <i data-lucide="award" class="w-20 h-20"></i>
                             </div>
-                            <h2 class="text-2xl font-black text-slate-900">Tu Perfil Funcional</h2>
-                            <p class="text-slate-400 text-xs">Resultados basados en tus respuestas</p>
-                        </div>
-                        <div class="space-y-3">
-                            ${results.map(r => `
-                                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <div class="flex justify-between mb-1">
-                                        <span class="text-[10px] font-black uppercase text-slate-400">${r.name}</span>
-                                        <span class="text-[10px] font-bold ${r.color}">${r.level}</span>
-                                    </div>
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex-grow bg-white h-2 rounded-full overflow-hidden border border-slate-100">
-                                            <div class="h-full ${r.bg}" style="width: ${(r.score / 4) * 100}%"></div>
+                            <h4 class="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-4 flex items-center gap-2">
+                                <i data-lucide="user-check" class="w-3 h-3"></i> Perfil Narrativo
+                            </h4>
+                            <p class="text-base leading-relaxed mb-8 font-medium italic opacity-90">"${profile.text}"</p>
+                            
+                            <div class="space-y-5 border-t border-white/10 pt-6">
+                                ${results.map(r => `
+                                    <div class="space-y-1.5">
+                                        <div class="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                                            <span class="opacity-40">${r.name}</span>
+                                            <span class="${r.color.replace('text-', 'text-')}">${r.level}</span>
                                         </div>
-                                        <span class="font-mono font-bold text-xs">${r.score}</span>
+                                        <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                            <div class="h-full ${r.bg}" style="width: ${(r.score/4)*100}%"></div>
+                                        </div>
                                     </div>
-                                </div>
-                            `).join('')}
+                                `).join('')}
+                            </div>
                         </div>
-                        <button onclick="location.reload()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl">Finalizar</button>
+
+                        <div class="bg-orange-50 p-6 rounded-3xl border border-orange-100 space-y-3">
+                            <h4 class="font-black text-xs uppercase text-orange-800 flex items-center gap-2">
+                                <i data-lucide="zap" class="w-4 h-4"></i> Clave de Mejora
+                            </h4>
+                            <p class="text-xs text-orange-900 leading-relaxed font-bold">${profile.action}</p>
+                        </div>
+
+                        <button onclick="location.reload()" class="tap-active w-full bg-slate-900 text-white font-bold py-5 rounded-2xl mt-4 shadow-xl">Finalizar Evaluación</button>
                     </div>
                 `;
             } else if (state.view === 'admin') {
                 root.innerHTML = `
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center">
-                            <h2 class="text-xl font-black">Datos Acumulados</h2>
-                            <button onclick="exportCSV()" class="p-2 bg-green-600 text-white rounded-lg"><i data-lucide="download"></i></button>
+                    <div class="slide-up space-y-4">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-xl font-black">Histórico Staff</h2>
+                            <button onclick="window.exportCSV()" class="bg-green-600 text-white p-2.5 rounded-xl shadow-lg">
+                                <i data-lucide="download" class="w-5 h-5"></i>
+                            </button>
                         </div>
-                        <div id="admin-list" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 text-[10px]">
-                            <p class="text-center py-10 text-slate-300">Cargando...</p>
+                        <div id="admin-list" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                            <p class="text-center py-20 text-slate-300 animate-pulse">Sincronizando con base de datos...</p>
                         </div>
-                        <button onclick="setView('home')" class="w-full py-3 text-slate-400 font-bold">Volver</button>
+                        <button onclick="window.go('home')" class="w-full py-4 text-slate-400 font-bold uppercase text-[10px] tracking-widest">Cerrar Sesión</button>
                     </div>
                 `;
-                loadAdmin();
+                window.loadData();
             }
             lucide.createIcons();
-        }
+        };
 
-        window.setView = (v) => { state.view = v; render(); };
-        window.next = async (val) => {
-            state.answers[ITEMS[state.index].id] = val;
-            if (state.index < ITEMS.length - 1) {
-                state.index++;
+        // Router & Actions
+        window.go = (v) => { state.view = v; render(); };
+
+        window.save = async (val) => {
+            state.answers[ITEMS[state.currentIdx].id] = val;
+            if (state.currentIdx < ITEMS.length - 1) {
+                state.currentIdx++;
                 render();
             } else {
                 state.view = 'report';
                 render();
-                // Guardar en Nube
-                const scores = calculate(state.answers);
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), {
-                    date: new Date().toISOString(),
-                    scores: scores,
-                    raw: state.answers
-                });
+                const scores = window.calculate(state.answers);
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), {
+                        createdAt: new Date().toISOString(),
+                        scores: scores,
+                        answers: state.answers
+                    });
+                } catch(e) { console.error(e); }
             }
         };
 
-        function calculate(ans) {
-            const proc = {};
-            ITEMS.forEach(it => proc[it.id] = it.inv ? (4 - ans[it.id]) : ans[it.id]);
-            const scales = [
+        window.calculate = (ans) => {
+            const clean = {};
+            ITEMS.forEach(it => clean[it.id] = it.inv ? (4 - ans[it.id]) : ans[it.id]);
+            const groups = [
                 { name: "Preparación", ids: [1,2,3,4,5] },
                 { name: "Reactividad (CCR1)", ids: [6,7,8,10,16,18] },
                 { name: "Disponibilidad (CCR2)", ids: [4,5,9,11,17,19] },
                 { name: "Entrenador", ids: [12,13,14,15] }
             ];
-            return scales.map(s => {
-                const avg = s.ids.reduce((a, b) => a + proc[b], 0) / s.ids.length;
+            return groups.map(g => {
+                const avg = g.ids.reduce((a, b) => a + clean[b], 0) / g.ids.length;
                 let level = "Bajo", color = "text-red-500", bg = "bg-red-500";
-                if (avg > 1.33) { level = "Medio"; color = "text-yellow-500"; bg = "bg-yellow-500"; }
-                if (avg > 2.66) { level = "Alto"; color = "text-green-600"; bg = "bg-green-600"; }
-                return { name: s.name, score: avg.toFixed(2), level, color, bg };
+                if (avg > 1.33) { level = "Medio"; color = "text-orange-500"; bg = "bg-orange-500"; }
+                if (avg > 2.66) { level = "Alto"; color = "text-green-500"; bg = "bg-green-500"; }
+                return { name: g.name, score: avg.toFixed(2), level, color, bg };
             });
-        }
+        };
 
-        async function loadAdmin() {
-            const snap = await getDocs(query(collection(db, 'artifacts', appId, 'public', 'data', 'responses')));
+        window.interpret = (results) => {
+            const r1 = parseFloat(results[1].score); // CCR1
+            const r2 = parseFloat(results[2].score); // CCR2
+            
+            let text = "Perfil en maduración: Mantienes el equilibrio en muchos momentos, pero el error aún te genera un impacto que debemos aprender a soltar más rápido para seguir sumando.";
+            let action = "Focalízate en tu rol defensivo justo después de un error; la acción física ayuda a borrar el pensamiento negativo.";
+
+            if (r1 >= 2.67 && r2 >= 2.67) {
+                text = "Perfil Resiliente: Gestionas el fallo como un dato técnico. Tu disponibilidad emocional tras el error es excelente, lo que te permite liderar al equipo en momentos tensos.";
+                action = "Esa resiliencia es tu mayor talento. Sigue contagiando esa calma a tus compañeros cuando ellos fallen.";
+            } else if (r1 < 1.34) {
+                text = "Perfil Sensible al Error: El fallo te bloquea y te saca del partido emocionalmente. Sientes que el error te define y eso reduce tu intensidad en las siguientes acciones.";
+                action = "Practica el 'vaciado mental' inmediato: una palmada o una respiración fuerte para decir 'la jugada terminó'.";
+            }
+            return { text, action };
+        };
+
+        window.loadData = async () => {
+            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
             const list = document.getElementById('admin-list');
             list.innerHTML = '';
             snap.forEach(doc => {
                 const d = doc.data();
-                list.innerHTML += `<div class="p-2 border-b border-slate-100 flex justify-between items-center">
-                    <span>${new Date(d.date).toLocaleDateString()}</span>
-                    <span class="font-bold text-slate-400">${d.scores.map(s => s.score).join(' | ')}</span>
-                </div>`;
+                list.innerHTML += `
+                    <div class="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center mb-2 shadow-sm text-[10px]">
+                        <div>
+                            <p class="font-black text-slate-800">${new Date(d.createdAt).toLocaleDateString()}</p>
+                            <p class="text-slate-300 font-mono">${doc.id.slice(0,6)}</p>
+                        </div>
+                        <div class="flex gap-2 font-bold font-mono">
+                            ${d.scores.map(s => `<span class="${s.color}">${s.score}</span>`).join('·')}
+                        </div>
+                    </div>`;
             });
-        }
+        };
 
         window.exportCSV = async () => {
             const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
-            let csv = "ID,Fecha,Prep,CCR1,CCR2,Entr\n";
+            let csv = "ID,Fecha,Prep,CCR1,CCR2,Staff\n";
             snap.forEach(doc => {
                 const d = doc.data();
-                csv += `${doc.id},${d.date},${d.scores[0].score},${d.scores[1].score},${d.scores[2].score},${d.scores[3].score}\n`;
+                csv += `${doc.id},${d.createdAt},${d.scores[0].score},${d.scores[1].score},${d.scores[2].score},${d.scores[3].score}\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = 'cfeb_fap_export.csv'; a.click();
+            a.href = url; a.download = `cfeb_fap_export_${new Date().getTime()}.csv`; a.click();
         };
 
+        // Firebase Auth Init
         onAuthStateChanged(auth, (u) => { 
             state.user = u; 
             if (!u) signInAnonymously(auth); 
             render(); 
         });
+
     </script>
 </body>
-</html>
-
+</html>                                
