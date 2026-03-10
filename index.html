@@ -10,17 +10,24 @@ import {
   collection, 
   addDoc, 
   getDocs, 
-  query
+  query,
+  orderBy
 } from 'firebase/firestore';
 import { 
   Trophy, 
   Settings, 
   AlertCircle,
-  ChevronLeft
+  ChevronLeft,
+  ChevronRight,
+  Database,
+  User,
+  Activity,
+  Award,
+  LogOut
 } from 'lucide-react';
 
 // ========================================================
-// 1. CONFIGURACIÓN MANUAL DE FIREBASE (RELLENA ESTO)
+// 1. CONFIGURACIÓN MANUAL DE FIREBASE
 // ========================================================
 const manualConfig = {
   apiKey: "TU_API_KEY_AQUÍ",
@@ -31,7 +38,6 @@ const manualConfig = {
   appId: "tu-app-id"
 };
 
-// --- LÓGICA DE INICIALIZACIÓN SEGURA ---
 const getFirebaseConfig = () => {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     try { return JSON.parse(__firebase_config); } catch (e) { }
@@ -42,46 +48,45 @@ const getFirebaseConfig = () => {
 const firebaseConfig = getFirebaseConfig();
 const isConfigValid = firebaseConfig.apiKey && firebaseConfig.apiKey !== "TU_API_KEY_AQUÍ";
 
-// Inicialización condicional para evitar que la app "explote" si no hay config
 let auth, db;
 try {
   const app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
 } catch (e) {
-  console.error("Firebase no pudo inicializarse:", e);
+  console.error("Firebase Initialization Error:", e);
 }
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'cfeb-fap-v1';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'cfeb-fap-v2';
 
 // --- CONSTANTES ---
 const QUESTIONS = [
-  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES", inverted: false },
-  { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "ANTES", inverted: true },
-  { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", section: "ANTES", inverted: true },
-  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "ANTES", inverted: false },
-  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "ANTES", inverted: false },
-  { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", section: "DURANTE", inverted: true },
-  { id: 7, text: "Después de fallar, tardo en volver a concentrarme", section: "DURANTE", inverted: true },
-  { id: 8, text: "Evito participar en la siguiente jugada tras un error", section: "DURANTE", inverted: true },
-  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "DURANTE", inverted: false },
-  { id: 10, text: "El error baja mi intensidad defensiva", section: "DURANTE", inverted: true },
-  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "DURANTE", inverted: false },
-  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "ENTRENADOR", inverted: false },
-  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "ENTRENADOR", inverted: false },
-  { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", section: "ENTRENADOR", inverted: true },
-  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "ENTRENADOR", inverted: false },
-  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "DESPUÉS", inverted: true },
-  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "DESPUÉS", inverted: false },
-  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "DESPUÉS", inverted: true },
-  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "DESPUÉS", inverted: false },
+  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "PRE-PARTIDO", inverted: false },
+  { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "PRE-PARTIDO", inverted: true },
+  { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", section: "PRE-PARTIDO", inverted: true },
+  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "DURANTE EL JUEGO", inverted: false },
+  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "DURANTE EL JUEGO", inverted: false },
+  { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", section: "DURANTE EL JUEGO", inverted: true },
+  { id: 7, text: "Después de fallar, tardo en volver a concentrarme", section: "DURANTE EL JUEGO", inverted: true },
+  { id: 8, text: "Evito participar en la siguiente jugada tras un error", section: "DURANTE EL JUEGO", inverted: true },
+  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "DURANTE EL JUEGO", inverted: false },
+  { id: 10, text: "El error baja mi intensidad defensiva", section: "DURANTE EL JUEGO", inverted: true },
+  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "DURANTE EL JUEGO", inverted: false },
+  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "RELACIÓN STAFF", inverted: false },
+  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "RELACIÓN STAFF", inverted: false },
+  { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", section: "RELACIÓN STAFF", inverted: true },
+  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "RELACIÓN STAFF", inverted: false },
+  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "POST-PARTIDO", inverted: true },
+  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "POST-PARTIDO", inverted: false },
+  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "POST-PARTIDO", inverted: true },
+  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "POST-PARTIDO", inverted: false },
 ];
 
 const SCALES = {
-  PREPARACION: { name: "Preparación Pre-partido", items: [1, 2, 3, 4, 5] },
-  REACTIVIDAD: { name: "Reactividad al Error (CCR1)", items: [6, 7, 8, 10, 16, 18] },
-  DISPONIBILIDAD: { name: "Disponibilidad Post-error (CCR2)", items: [4, 5, 9, 11, 17, 19] },
-  ENTRENADOR: { name: "Apoyo del Entrenador", items: [12, 13, 14, 15] },
+  PREPARACION: { name: "Preparación Mental", items: [1, 2, 3, 4, 5], color: "bg-blue-500" },
+  REACTIVIDAD: { name: "Reactividad al Error (CCR1)", items: [6, 7, 8, 10, 16, 18], color: "bg-red-500" },
+  DISPONIBILIDAD: { name: "Disponibilidad (CCR2)", items: [4, 5, 9, 11, 17, 19], color: "bg-emerald-500" },
+  ENTRENADOR: { name: "Apoyo del Staff", items: [12, 13, 14, 15], color: "bg-amber-500" },
 };
 
 export default function App() {
@@ -92,7 +97,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [adminData, setAdminData] = useState([]);
   const [adminPass, setAdminPass] = useState("");
-  const [dbError, setDbError] = useState(!isConfigValid);
+  const [dbStatus, setDbStatus] = useState(isConfigValid ? 'connected' : 'error');
 
   useEffect(() => {
     if (!isConfigValid) return;
@@ -101,8 +106,7 @@ export default function App() {
       try {
         await signInAnonymously(auth);
       } catch (error) {
-        console.error("Error Auth:", error);
-        setDbError(true);
+        setDbStatus('error');
       }
     };
     initAuth();
@@ -116,7 +120,7 @@ export default function App() {
       const scale = SCALES[key];
       const scores = scale.items.map(id => {
         const q = QUESTIONS.find(q => q.id === id);
-        const val = dataAnswers[id] || 0;
+        const val = dataAnswers[id] ?? 0;
         return q.inverted ? 4 - val : val;
       });
       results[key] = parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2));
@@ -124,187 +128,306 @@ export default function App() {
     return results;
   };
 
-  const saveResults = async () => {
-    if (!isConfigValid) { setView('results'); return; }
+  const handleSave = async () => {
     setLoading(true);
     const results = calculateResults(answers);
-    try {
-      const colPath = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
-      await addDoc(colPath, { 
-        userId: user?.uid || 'anonymous', 
-        timestamp: new Date().toISOString(), 
-        results 
-      });
-      setView('results');
-    } catch (e) { 
-      console.error("Error guardando:", e);
-      setView('results'); 
-    } finally { setLoading(false); }
+    
+    if (isConfigValid && user) {
+      try {
+        const colPath = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
+        await addDoc(colPath, { 
+          userId: user.uid, 
+          timestamp: new Date().toISOString(), 
+          results 
+        });
+      } catch (e) {
+        console.error("Cloud Save Error:", e);
+      }
+    }
+    
+    setLoading(false);
+    setView('results');
   };
 
-  const fetchAdminData = async () => {
-    if (adminPass !== "CFEB2026") { alert("Contraseña incorrecta"); return; }
-    if (!isConfigValid) { alert("Configura Firebase primero"); return; }
+  const handleAdminAccess = async () => {
+    if (adminPass !== "CFEB2026") { 
+      alert("Acceso denegado."); 
+      return; 
+    }
+    if (!isConfigValid) {
+      alert("Error: Firebase no configurado.");
+      return;
+    }
     setLoading(true);
     try {
       const colPath = collection(db, 'artifacts', appId, 'public', 'data', 'responses');
       const snapshot = await getDocs(colPath);
       setAdminData(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setView('admin');
-    } catch (e) { alert("Error al conectar"); }
-    finally { setLoading(false); }
+    } catch (e) {
+      alert("Error al recuperar datos.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // --- VISTA DE BIENVENIDA ---
-  if (view === 'welcome') return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-      <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 border border-slate-100">
-        {dbError && (
-          <div className="mb-6 p-4 bg-amber-50 text-amber-700 text-[11px] font-bold uppercase rounded-2xl flex items-center gap-2 border border-amber-100 leading-tight">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span>Configuración pendiente: La base de datos no está vinculada.</span>
-          </div>
-        )}
-        <div className="bg-orange-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-600">
-          <Trophy className="w-8 h-8" />
-        </div>
-        <h1 className="text-3xl font-black text-slate-900 mb-2 italic tracking-tighter uppercase">CFEB-FAP</h1>
-        <p className="text-slate-400 text-sm mb-10 italic">Análisis Funcional del Error en Baloncesto</p>
-        
-        <button 
-          onClick={() => setView('survey')}
-          className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl hover:bg-black transition-all active:scale-95"
-        >
-          Empezar Test
-        </button>
+  // --- COMPONENTES DE VISTA ---
 
-        <div className="mt-12 pt-8 border-t border-slate-50">
-          <input 
-            type="password" 
-            placeholder="Pass Staff" 
-            className="w-full mb-3 p-4 bg-slate-100 rounded-xl text-center text-sm outline-none focus:ring-2 focus:ring-orange-500"
-            onChange={(e) => setAdminPass(e.target.value)}
-          />
-          <button onClick={fetchAdminData} className="text-slate-300 text-[10px] font-black uppercase tracking-widest hover:text-slate-900 flex items-center justify-center mx-auto gap-1">
-            <Settings className="w-3 h-3" /> {loading ? "Cargando..." : "Acceso Admin"}
+  if (view === 'welcome') return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
+        <div className="bg-slate-900 p-8 text-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+          <Trophy className="w-12 h-12 text-orange-500 mx-auto mb-4" />
+          <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">CFEB-FAP</h1>
+          <p className="text-slate-400 text-xs font-bold tracking-[0.2em] mt-2">Functional Analysis Protocol</p>
+        </div>
+        
+        <div className="p-8">
+          <div className="space-y-4 mb-8">
+            <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl">
+              <Activity className="w-5 h-5 text-orange-500 mt-1" />
+              <div>
+                <p className="text-sm font-bold text-slate-800">Evaluación de Resiliencia</p>
+                <p className="text-xs text-slate-500">Mide tu capacidad de respuesta ante el error en pista.</p>
+              </div>
+            </div>
+            {dbStatus === 'error' && (
+              <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-bold border border-amber-100 uppercase">
+                <AlertCircle className="w-4 h-4" />
+                <span>Modo Offline: No se guardarán datos en la nube.</span>
+              </div>
+            )}
+          </div>
+
+          <button 
+            onClick={() => setView('survey')}
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-95"
+          >
+            Iniciar Evaluación
           </button>
+
+          <div className="mt-10 pt-6 border-t border-slate-100">
+            <div className="flex gap-2">
+              <input 
+                type="password" 
+                placeholder="Staff Pass" 
+                className="flex-1 p-3 bg-slate-50 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-200 transition-all text-center"
+                onChange={(e) => setAdminPass(e.target.value)}
+              />
+              <button 
+                onClick={handleAdminAccess}
+                className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 
-  // --- VISTA DE ENCUESTA ---
   if (view === 'survey') {
     const q = QUESTIONS[currentStep];
+    const progress = ((currentStep + 1) / QUESTIONS.length) * 100;
+
     return (
-      <div className="min-h-screen bg-white p-6 flex flex-col items-center">
-        <div className="max-w-xl w-full pt-10">
-          <div className="flex justify-between items-center mb-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
-            <span>{q.section}</span>
-            <span>{currentStep + 1} / {QUESTIONS.length}</span>
+      <div className="min-h-screen bg-white flex flex-col">
+        {/* Header */}
+        <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.section}</span>
+            <div className="flex items-center gap-1 mt-1">
+               <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+               <span className="text-xs font-bold text-slate-900">Pregunta {currentStep + 1} de {QUESTIONS.length}</span>
+            </div>
           </div>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full mb-16">
-            <div className="bg-orange-500 h-full transition-all duration-500" style={{ width: `${((currentStep+1)/QUESTIONS.length)*100}%` }}></div>
+          <button 
+            onClick={() => setView('welcome')}
+            className="p-2 text-slate-400 hover:text-slate-900 transition-colors"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="h-1 w-full bg-slate-100">
+          <div className="h-full bg-orange-500 transition-all duration-500 ease-out" style={{ width: `${progress}%` }}></div>
+        </div>
+
+        {/* Question Area */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6 max-w-2xl mx-auto w-full">
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 text-center mb-16 leading-tight">
+            {q.text}
+          </h2>
+
+          <div className="w-full space-y-8">
+            <div className="flex justify-between items-center px-4">
+              {[0, 1, 2, 3, 4].map(val => (
+                <button
+                  key={val}
+                  onClick={() => setAnswers({...answers, [q.id]: val})}
+                  className={`group relative flex flex-col items-center transition-all duration-300 ${answers[q.id] === val ? 'scale-110' : 'hover:scale-105'}`}
+                >
+                  <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center border-2 font-black text-lg transition-all
+                    ${answers[q.id] === val 
+                      ? 'bg-slate-900 border-slate-900 text-white shadow-xl rotate-3' 
+                      : 'bg-white border-slate-100 text-slate-300 group-hover:border-slate-300 group-hover:text-slate-500'}`}
+                  >
+                    {val}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-between px-6 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              <span>Nunca</span>
+              <span>A veces</span>
+              <span>Siempre</span>
+            </div>
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-20 text-center leading-snug">{q.text}</h2>
-          <div className="flex justify-between max-w-sm mx-auto mb-4">
-            {[0, 1, 2, 3, 4].map(val => (
-              <button 
-                key={val} 
-                onClick={() => setAnswers({...answers, [q.id]: val})}
-                className={`w-14 h-14 rounded-2xl border-2 font-black transition-all ${answers[q.id] === val ? 'bg-orange-500 border-orange-500 text-white scale-110 shadow-lg' : 'border-slate-50 text-slate-200 hover:border-slate-200 hover:text-slate-400'}`}
-              >
-                {val}
-              </button>
-            ))}
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-300 font-black uppercase max-w-sm mx-auto px-2 mb-24">
-            <span>Nunca</span><span>Siempre</span>
-          </div>
-          <div className="flex gap-4 fixed bottom-10 left-0 right-0 max-w-xl mx-auto px-6">
-            <button onClick={() => setCurrentStep(Math.max(0, currentStep-1))} className={`p-5 bg-slate-50 rounded-2xl text-slate-400 ${currentStep === 0 ? 'invisible' : ''}`}>
-              <ChevronLeft />
+        </div>
+
+        {/* Footer Nav */}
+        <div className="p-6 bg-slate-50/50 backdrop-blur-md border-t border-slate-100 flex gap-4 sticky bottom-0">
+          <button 
+            onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
+            className={`flex-1 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-400 flex items-center justify-center gap-2 hover:bg-slate-100 transition-all ${currentStep === 0 ? 'opacity-0 pointer-events-none' : ''}`}
+          >
+            <ChevronLeft className="w-4 h-4" /> Anterior
+          </button>
+          
+          {currentStep < QUESTIONS.length - 1 ? (
+            <button 
+              disabled={answers[q.id] === undefined}
+              onClick={() => setCurrentStep(currentStep + 1)}
+              className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-black transition-all disabled:opacity-20 active:scale-95"
+            >
+              Siguiente <ChevronRight className="w-4 h-4" />
             </button>
-            {currentStep < QUESTIONS.length - 1 ? (
-              <button 
-                disabled={answers[q.id] === undefined} 
-                onClick={() => setCurrentStep(currentStep + 1)} 
-                className="flex-1 py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl disabled:opacity-20"
-              >
-                Siguiente
-              </button>
-            ) : (
-              <button 
-                disabled={loading || answers[q.id] === undefined} 
-                onClick={saveResults} 
-                className="flex-1 py-5 bg-orange-600 text-white rounded-2xl font-bold shadow-xl"
-              >
-                {loading ? "Guardando..." : "Ver Resultados"}
-              </button>
-            )}
-          </div>
+          ) : (
+            <button 
+              disabled={loading || answers[q.id] === undefined}
+              onClick={handleSave}
+              className="flex-[2] py-4 bg-orange-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-orange-700 transition-all disabled:opacity-20 active:scale-95"
+            >
+              {loading ? 'Procesando...' : 'Finalizar Test'} <Award className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
-  // --- VISTA DE RESULTADOS ---
   if (view === 'results') {
     const results = calculateResults(answers);
     return (
-      <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10">
-          <h2 className="text-2xl font-black mb-8 italic tracking-tighter text-slate-900 uppercase">Tu Perfil</h2>
-          <div className="space-y-6 mb-10">
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white">
+        <div className="max-w-md w-full bg-slate-800 rounded-[3rem] p-10 shadow-2xl border border-slate-700 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-orange-500 via-red-500 to-orange-500"></div>
+          
+          <div className="flex items-center gap-3 mb-10">
+            <div className="bg-orange-500/20 p-3 rounded-2xl">
+              <Activity className="w-6 h-6 text-orange-500" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black italic tracking-tighter uppercase">Perfil de Resiliencia</h2>
+              <p className="text-[10px] text-slate-500 font-bold tracking-widest uppercase">Resultados por Escala (0-4)</p>
+            </div>
+          </div>
+
+          <div className="space-y-8 mb-12">
             {Object.keys(SCALES).map(key => (
-              <div key={key}>
-                <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">
-                  <span>{SCALES[key].name}</span>
-                  <span className="text-slate-900">{results[key]}</span>
+              <div key={key} className="group">
+                <div className="flex justify-between items-end mb-2">
+                  <span className="text-xs font-black uppercase text-slate-400 tracking-wider group-hover:text-slate-200 transition-colors">
+                    {SCALES[key].name}
+                  </span>
+                  <span className="text-xl font-black text-white italic">{results[key]}</span>
                 </div>
-                <div className="h-2 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
-                  <div className="bg-slate-900 h-full" style={{ width: `${(results[key]/4)*100}%` }}></div>
+                <div className="h-3 bg-slate-700 rounded-full overflow-hidden p-0.5">
+                  <div 
+                    className={`${SCALES[key].color} h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(0,0,0,0.3)]`} 
+                    style={{ width: `${(results[key] / 4) * 100}%` }}
+                  ></div>
                 </div>
               </div>
             ))}
           </div>
-          <button onClick={() => window.location.reload()} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black transition">Finalizar</button>
+
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full py-5 bg-white text-slate-900 rounded-2xl font-black uppercase text-sm tracking-widest hover:bg-slate-100 transition-all shadow-xl active:scale-95"
+          >
+            Nueva Evaluación
+          </button>
         </div>
+        <p className="mt-8 text-slate-500 text-[10px] uppercase font-black tracking-[0.3em]">CFEB-FAP Protocol v2.0</p>
       </div>
     );
   }
 
-  // --- VISTA ADMIN ---
   if (view === 'admin') return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-5xl mx-auto bg-white rounded-[2rem] shadow-xl overflow-hidden">
-        <div className="p-8 border-b border-slate-50 flex justify-between items-center">
-          <h2 className="text-xl font-black italic uppercase tracking-tighter">Registros Cloud</h2>
-          <button onClick={() => setView('welcome')} className="text-xs font-black uppercase text-slate-400">Cerrar</button>
+    <div className="min-h-screen bg-slate-50 p-6 md:p-12">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="bg-slate-900 p-3 rounded-2xl text-white">
+              <Database className="w-6 h-6" />
+            </div>
+            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-slate-900">Cloud Storage Staff</h2>
+          </div>
+          <button 
+            onClick={() => setView('welcome')}
+            className="px-6 py-2 bg-white border border-slate-200 text-slate-500 rounded-xl font-bold text-xs uppercase hover:bg-slate-100 transition-all"
+          >
+            Cerrar Sesión
+          </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest border-b">
-                <th className="p-6">ID Atleta</th>
-                <th className="p-6">Fecha</th>
-                <th className="p-6 text-center">CCR1</th>
-                <th className="p-6 text-center">CCR2</th>
-              </tr>
-            </thead>
-            <tbody>
-              {adminData.length === 0 ? (
-                <tr><td colSpan="4" className="p-20 text-center text-slate-300 italic">No hay datos en la nube.</td></tr>
-              ) : adminData.map(d => (
-                <tr key={d.id} className="border-b border-slate-50">
-                  <td className="p-6 font-mono text-slate-400">...{d.userId?.slice(-5)}</td>
-                  <td className="p-6 font-bold">{new Date(d.timestamp).toLocaleDateString()}</td>
-                  <td className="p-6 text-center">{d.results?.REACTIVIDAD}</td>
-                  <td className="p-6 text-center">{d.results?.DISPONIBILIDAD}</td>
+
+        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest">
+                  <th className="p-6">Jugador (UUID)</th>
+                  <th className="p-6">Fecha/Hora</th>
+                  <th className="p-6 text-center">Prep. Mental</th>
+                  <th className="p-6 text-center">Reactividad</th>
+                  <th className="p-6 text-center">Disponibilidad</th>
+                  <th className="p-6 text-center">Apoyo Staff</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {adminData.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="p-20 text-center text-slate-300 italic font-medium">No se han encontrado registros en Firebase.</td>
+                  </tr>
+                ) : adminData.map(d => (
+                  <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                    <td className="p-6 flex items-center gap-3">
+                      <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <span className="font-mono text-[10px] text-slate-400">...{d.userId?.slice(-6)}</span>
+                    </td>
+                    <td className="p-6">
+                      <div className="font-bold text-slate-800">{new Date(d.timestamp).toLocaleDateString()}</div>
+                      <div className="text-[10px] text-slate-400">{new Date(d.timestamp).toLocaleTimeString()}</div>
+                    </td>
+                    <td className="p-6 text-center font-black text-slate-900">{d.results?.PREPARACION}</td>
+                    <td className="p-6 text-center">
+                      <span className={`px-3 py-1 rounded-full font-black ${d.results?.REACTIVIDAD > 2.5 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                        {d.results?.REACTIVIDAD}
+                      </span>
+                    </td>
+                    <td className="p-6 text-center font-black text-slate-900">{d.results?.DISPONIBILIDAD}</td>
+                    <td className="p-6 text-center font-bold text-slate-500">{d.results?.ENTRENADOR}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
