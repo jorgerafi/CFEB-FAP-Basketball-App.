@@ -1,303 +1,451 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CFEB-FAP | Protocolo de Investigación</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f1f5f9; }
-        .slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .tap-active:active { transform: scale(0.96); }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-    </style>
-</head>
-<body class="antialiased text-slate-900">
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  orderBy 
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell 
+} from 'recharts';
+import { 
+  ClipboardCheck, 
+  LayoutDashboard, 
+  User, 
+  ChevronRight, 
+  ChevronLeft, 
+  Send, 
+  Lock,
+  Trophy,
+  AlertCircle,
+  TrendingUp
+} from 'lucide-react';
 
-    <div id="app" class="min-h-screen flex flex-col max-w-md mx-auto bg-white shadow-2xl relative border-x border-slate-200">
-        <!-- Header con Estado de Nube -->
-        <header class="p-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-lg z-50">
-            <div class="flex items-center gap-3" id="logo-trigger">
-                <div class="bg-blue-900 p-2.5 rounded-2xl shadow-lg shadow-blue-100">
-                    <i data-lucide="basketball" class="w-5 h-5 text-white"></i>
-                </div>
-                <div>
-                    <h1 class="font-extrabold text-base leading-none uppercase tracking-tight text-blue-950">CFEB-FAP</h1>
-                    <p class="text-[8px] text-blue-600 font-black uppercase tracking-widest mt-1 italic">Investigación</p>
-                </div>
+// --- CONFIGURACIÓN FIREBASE ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'fap-baloncesto-001';
+
+// --- CONSTANTES DEL TEST ---
+const ITEMS = [
+  { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", section: "ANTES", invert: false },
+  { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", section: "ANTES", invert: true },
+  { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", section: "ANTES", invert: true },
+  { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", section: "ANTES", invert: false },
+  { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", section: "ANTES", invert: false },
+  { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", section: "DURANTE", invert: true },
+  { id: 7, text: "Después de fallar, tardo en volver a concentrarme", section: "DURANTE", invert: true },
+  { id: 8, text: "Evito participar en la siguiente jugada tras un error", section: "DURANTE", invert: true },
+  { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", section: "DURANTE", invert: false },
+  { id: 10, text: "El error baja mi intensidad defensiva", section: "DURANTE", invert: true },
+  { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", section: "DURANTE", invert: false },
+  { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", section: "ENTRENADOR", invert: false },
+  { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", section: "ENTRENADOR", invert: false },
+  { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", section: "ENTRENADOR", invert: true },
+  { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", section: "ENTRENADOR", invert: false },
+  { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", section: "DESPUÉS", invert: true },
+  { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", section: "DESPUÉS", invert: false },
+  { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", section: "DESPUÉS", invert: true },
+  { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", section: "DESPUÉS", invert: false },
+];
+
+const SUBESCALAS = [
+  { name: "Preparación Pre-partido", items: [1, 2, 3, 4, 5] },
+  { name: "Reactividad al Error (CCR1)", items: [6, 7, 8, 10, 16, 18] },
+  { name: "Disponibilidad Post-error (CCR2)", items: [4, 5, 9, 11, 17, 19] },
+  { name: "Apoyo del Entrenador", items: [12, 13, 14, 15] },
+];
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('welcome'); // welcome, test, results, admin
+  const [currentStep, setCurrentStep] = useState(0);
+  const [responses, setResponses] = useState({});
+  const [playerId, setPlayerId] = useState('');
+  const [adminPass, setAdminPass] = useState('');
+  const [allResults, setAllResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [finalScores, setFinalScores] = useState(null);
+
+  // Auth Initialization
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // Admin Data Listener
+  useEffect(() => {
+    if (!user || view !== 'admin') return;
+    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'results'), orderBy('timestamp', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllResults(data);
+    }, (err) => console.error("Firestore Error:", err));
+    return () => unsubscribe();
+  }, [user, view]);
+
+  const handleResponse = (itemId, value) => {
+    setResponses(prev => ({ ...prev, [itemId]: value }));
+  };
+
+  const calculateResults = () => {
+    const scores = SUBESCALAS.map(sub => {
+      const subItems = ITEMS.filter(i => sub.items.includes(i.id));
+      let total = 0;
+      subItems.forEach(item => {
+        let val = responses[item.id] || 0;
+        if (item.invert) val = 4 - val;
+        total += val;
+      });
+      return {
+        name: sub.name,
+        score: parseFloat((total / subItems.length).toFixed(2))
+      };
+    });
+    return scores;
+  };
+
+  const submitTest = async () => {
+    if (Object.keys(responses).length < ITEMS.length) {
+      alert("Por favor, responde a todos los ítems.");
+      return;
+    }
+    setLoading(true);
+    const results = calculateResults();
+    const dataToSave = {
+      playerId: playerId || 'Anónimo',
+      responses,
+      results,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'results'), dataToSave);
+      setFinalScores(results);
+      setView('results');
+    } catch (e) {
+      alert("Error al guardar. Inténtalo de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getInterpretation = (score) => {
+    if (score >= 2.67) return { text: "Fortaleza", color: "text-green-600", bg: "bg-green-100" };
+    if (score >= 1.34) return { text: "Intermedio", color: "text-yellow-600", bg: "bg-yellow-100" };
+    return { text: "Mejora Prioritaria", color: "text-red-600", bg: "bg-red-100" };
+  };
+
+  // --- RENDERING COMPONENTS ---
+
+  if (view === 'welcome') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
+          <div className="flex justify-center mb-6">
+            <div className="bg-orange-100 p-4 rounded-2xl">
+              <Trophy className="w-12 h-12 text-orange-600" />
             </div>
-            <div id="cloud-status" class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-100 bg-slate-50 transition-all duration-500">
-                <div id="status-dot" class="w-2 h-2 rounded-full bg-slate-300"></div>
-                <span id="status-text" class="text-[9px] font-black uppercase tracking-wider text-slate-400 italic">Buscando...</span>
+          </div>
+          <h1 className="text-3xl font-bold text-slate-800 text-center mb-2">CFEB-FAP</h1>
+          <p className="text-slate-500 text-center mb-8 leading-relaxed">
+            Análisis funcional de la respuesta al error en baloncesto. Tus respuestas son anónimas.
+          </p>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">ID de Jugador (Opcional)</label>
+              <input 
+                type="text" 
+                placeholder="Ej: Dorsal 12" 
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-orange-500 focus:outline-none transition-all"
+                value={playerId}
+                onChange={(e) => setPlayerId(e.target.value)}
+              />
             </div>
-        </header>
-
-        <!-- Contenedor Principal -->
-        <main id="view-container" class="flex-grow p-6 flex flex-col overflow-y-auto no-scrollbar"></main>
-
-        <!-- Footer Académico -->
-        <footer class="p-6 text-center border-t border-slate-50 bg-slate-50/40">
-            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed">
-                Jorge Maroto Cuadrado · CB Estudiantes<br>
-                "El fallo es información, no derrota"
-            </p>
-        </footer>
-    </div>
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        let db = null;
-        let auth = null;
-        let currentUser = null;
-        
-        // --- MOTOR DE DIAGNÓSTICO ---
-        const getEnv = (key) => {
-            // Vercel inyecta variables en process.env, pero en el navegador 
-            // a veces necesitamos que el build las exponga. 
-            // Si usas Vercel con HTML plano, asegúrate de que se llamen exactamente así.
-            return window[key] || (typeof process !== 'undefined' ? process.env[key] : null);
-        };
-
-        async function connectCloud() {
-            const configValue = getEnv('__firebase_config');
-            const appId = getEnv('__app_id') || 'fap-estudiantes-2026';
-
-            // Timeout de seguridad: si en 6 segundos no hay respuesta, avisamos.
-            const timeout = setTimeout(() => {
-                if (!currentUser) updateBadge("Timeout: Revisa Vercel", "bg-orange-400");
-            }, 6000);
-
-            if (!configValue) {
-                updateBadge("Falta Configuración", "bg-red-500");
-                showErrorInView("No se detectan las variables de entorno en Vercel. Asegúrate de haber añadido __firebase_config y __app_id en Settings > Environment Variables y haber hecho un 'Redeploy'.");
-                return;
-            }
-
-            try {
-                // Intentamos parsear el JSON (Vercel a veces lo entrega con comillas extra)
-                let config;
-                try {
-                    config = typeof configValue === 'string' ? JSON.parse(configValue.trim()) : configValue;
-                } catch (e) {
-                    // Si falla el parseo, probamos a limpiar posibles comillas exteriores
-                    const cleaned = configValue.replace(/^['"]|['"]$/g, '');
-                    config = JSON.parse(cleaned);
-                }
-
-                const app = initializeApp(config);
-                auth = getAuth(app);
-                db = getFirestore(app);
-
-                await signInAnonymously(auth);
-                onAuthStateChanged(auth, (user) => {
-                    currentUser = user;
-                    if (user) {
-                        clearTimeout(timeout);
-                        updateBadge("Cloud Online", "bg-green-500");
-                        if(state.view === 'intro') render(); // Refrescar para quitar posibles errores
-                    }
-                });
-            } catch (err) {
-                updateBadge("Error Firebase", "bg-red-600");
-                showErrorInView("Error de conexión: " + err.message);
-                console.error(err);
-            }
-        }
-
-        function updateBadge(text, colorClass) {
-            const dot = document.getElementById('status-dot');
-            const txt = document.getElementById('status-text');
-            if(dot && txt) {
-                dot.className = `w-2 h-2 rounded-full ${colorClass} ${colorClass.includes('green') ? 'animate-pulse' : ''}`;
-                txt.innerText = text;
-                txt.className = `text-[9px] font-black uppercase tracking-wider ${colorClass.replace('bg-', 'text-')}`;
-            }
-        }
-
-        function showErrorInView(msg) {
-            const container = document.getElementById('view-container');
-            container.innerHTML = `
-                <div class="flex-grow flex flex-col justify-center items-center text-center p-4 slide-up">
-                    <div class="bg-red-50 p-6 rounded-[2rem] border border-red-100 space-y-4">
-                        <i data-lucide="alert-triangle" class="w-10 h-10 text-red-500 mx-auto"></i>
-                        <h3 class="font-black text-red-900 uppercase italic">Error de Sistema</h3>
-                        <p class="text-xs text-red-700 font-bold leading-relaxed">${msg}</p>
-                        <button onclick="location.reload()" class="bg-red-500 text-white text-[10px] font-black px-6 py-3 rounded-2xl uppercase tracking-widest">Reintentar</button>
-                    </div>
-                </div>
-            `;
-            lucide.createIcons();
-        }
-
-        // --- LÓGICA DE LA APP (IDEM ANTERIOR) ---
-        const ITEMS = [
-            { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "PREP" },
-            { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "PREP", inv: true },
-            { id: 3, text: "Me siento nervioso o tenso antes de empezar el partido", cat: "PREP", inv: true },
-            { id: 4, text: "Me siento con confianza para seguir jugando aunque falle", cat: "PREP" },
-            { id: 5, text: "Me siento disponible para asumir responsabilidades en el juego", cat: "PREP" },
-            { id: 6, text: "Cuando cometo un error, me bloqueo emocionalmente", cat: "CCR1", inv: true },
-            { id: 7, text: "Después de fallar, tardo en volver a concentrarme", cat: "CCR1", inv: true },
-            { id: 8, text: "Evito participar en la siguiente jugada tras un error", cat: "CCR1", inv: true },
-            { id: 9, text: "Soy capaz de centrarme rápido en la siguiente acción", cat: "CCR2" },
-            { id: 10, text: "El error baja mi intensidad defensiva", cat: "CCR1", inv: true },
-            { id: 11, text: "Después de fallar, sigo disponible para recibir el balón", cat: "CCR2" },
-            { id: 12, text: "Las indicaciones del entrenador me ayudan después de un error", cat: "STAFF" },
-            { id: 13, text: "El feedback del entrenador reduce mi malestar cuando fallo", cat: "STAFF" },
-            { id: 14, text: "A veces las indicaciones del entrenador me generan más presión", cat: "STAFF", inv: true },
-            { id: 15, text: "Me siento apoyado por el entrenador cuando cometo errores", cat: "STAFF" },
-            { id: 16, text: "Después del partido sigo dándole vueltas a mis errores", cat: "CCR1", inv: true },
-            { id: 17, text: "Me resulta fácil soltar el partido a nivel emocional", cat: "CCR2" },
-            { id: 18, text: "Los errores afectan a mi estado de ánimo después del partido", cat: "CCR1", inv: true },
-            { id: 19, text: "Soy capaz de aprender de los errores sin machacarme", cat: "CCR2" }
-        ];
-
-        let state = { view: 'intro', player: '', current: 0, answers: {} };
-
-        const render = () => {
-            const container = document.getElementById('view-container');
-            if (container.querySelector('.bg-red-50')) return; // No pisar el error si existe
             
-            container.innerHTML = '';
-            if (state.view === 'intro') {
-                container.innerHTML = `
-                    <div class="flex-grow flex flex-col justify-center items-center text-center space-y-12 slide-up pt-10">
-                        <div class="space-y-4">
-                            <div class="bg-blue-50 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto border border-blue-100 shadow-xl">
-                                <i data-lucide="microscope" class="w-10 h-10 text-blue-900"></i>
-                            </div>
-                            <h2 class="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">Protocolo FAP</h2>
-                            <p class="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] px-10 italic">Investigación CB Estudiantes</p>
-                        </div>
-                        <div class="w-full space-y-6">
-                            <input type="text" id="input-name" placeholder="Nombre o ID del Jugador" 
-                                class="w-full p-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:border-blue-900 outline-none font-bold text-center transition-all shadow-inner">
-                            <button id="btn-start" class="tap-active w-full bg-blue-950 text-white font-black py-5 rounded-3xl shadow-2xl flex items-center justify-center gap-4 uppercase text-xs tracking-[0.2em]">
-                                Empezar <i data-lucide="chevron-right" class="w-5 h-5"></i>
-                            </button>
-                        </div>
-                        <button id="btn-admin" class="text-[9px] font-black text-slate-300 uppercase tracking-widest hover:text-blue-900">Historial Staff <i data-lucide="lock" class="w-2.5 h-2.5 inline ml-1"></i></button>
-                    </div>
-                `;
-                document.getElementById('btn-start').onclick = () => {
-                    const name = document.getElementById('input-name').value.trim();
-                    if (!name) return;
-                    state.player = name; state.view = 'quiz'; render();
-                };
-                document.getElementById('btn-admin').onclick = () => { state.view = 'admin'; render(); };
-            } 
-            else if (state.view === 'quiz') {
-                const item = ITEMS[state.current];
-                container.innerHTML = `
-                    <div class="slide-up">
-                        <div class="flex justify-between items-center mb-8">
-                            <span class="text-[10px] font-black text-blue-800 uppercase italic tracking-widest">${state.player}</span>
-                            <span class="text-[10px] text-slate-300 font-bold uppercase tracking-widest">${state.current + 1} / 19</span>
-                        </div>
-                        <h3 class="text-2xl font-black text-slate-800 leading-tight italic mb-10">"${item.text}"</h3>
-                        <div class="grid gap-3">
-                            ${[0, 1, 2, 3, 4].map(v => `
-                                <button onclick="window.saveOption(${v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left font-bold flex justify-between items-center hover:border-blue-900 shadow-sm transition-all">
-                                    <span class="text-slate-600 text-sm font-bold uppercase tracking-wide">
-                                        ${v === 0 ? 'Nunca' : v === 4 ? 'Siempre' : v === 2 ? 'A veces' : 'Nivel ' + v}
-                                    </span>
-                                    <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-[10px] text-slate-300 font-black">${v}</div>
-                                </button>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-            else if (state.view === 'results') {
-                container.innerHTML = `<div class="py-20 text-center font-black italic uppercase text-slate-400">Enviando a la nube...</div>`;
-                window.finishTest();
-            }
-            else if (state.view === 'admin') {
-                container.innerHTML = `<div class="flex justify-between items-center mb-6">
-                    <h2 class="text-xl font-black italic">HISTORIAL</h2>
-                    <button onclick="window.go('intro')" class="text-slate-400"><i data-lucide="x"></i></button>
-                </div><div id="data-list" class="space-y-4"></div>`;
-                window.loadData();
-            }
-            lucide.createIcons();
-        };
+            <button 
+              onClick={() => setView('test')}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-orange-200 transition-all flex items-center justify-center gap-2 group"
+            >
+              Comenzar Test
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </button>
 
-        window.go = (v) => { state.view = v; render(); };
-        window.saveOption = (val) => {
-            state.answers[ITEMS[state.current].id] = val;
-            if (state.current < ITEMS.length - 1) { state.current++; render(); }
-            else { state.view = 'results'; render(); }
-        };
+            <button 
+              onClick={() => setView('admin-login')}
+              className="w-full text-slate-400 hover:text-slate-600 text-sm font-medium pt-4 transition-colors"
+            >
+              Acceso Entrenadores
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-        window.finishTest = async () => {
-            const results = window.calculateResults(state.answers);
-            if (db && currentUser) {
-                try {
-                    await addDoc(collection(db, 'artifacts', getEnv('__app_id') || 'fap-est-26', 'public', 'data', 'responses'), {
-                        playerName: state.player,
-                        timestamp: serverTimestamp(),
-                        scores: results,
-                        raw: state.answers,
-                        uid: currentUser.uid
-                    });
-                } catch (e) { console.error(e); }
-            }
-            document.getElementById('view-container').innerHTML = `
-                <div class="slide-up space-y-6 text-center py-10">
-                    <div class="bg-blue-950 p-10 rounded-[3rem] text-white shadow-2xl">
-                        <h4 class="text-blue-400 font-black text-[10px] uppercase tracking-widest mb-4">Completado</h4>
-                        <h3 class="text-2xl font-black italic mb-6 uppercase tracking-tighter">${state.player}</h3>
-                        <p class="text-xs font-bold text-blue-200 leading-relaxed uppercase tracking-widest">Tus datos han sido registrados correctamente en la investigación.</p>
-                    </div>
-                    <button onclick="location.reload()" class="w-full py-5 bg-slate-900 text-white font-black rounded-3xl uppercase text-xs tracking-widest">Finalizar</button>
+  if (view === 'admin-login') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-sm w-full bg-white rounded-3xl shadow-xl p-8 text-center">
+          <Lock className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-6">Panel de Administración</h2>
+          <input 
+            type="password" 
+            placeholder="Contraseña" 
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 mb-4 outline-none focus:ring-2 focus:ring-slate-400"
+            value={adminPass}
+            onChange={(e) => setAdminPass(e.target.value)}
+          />
+          <button 
+            onClick={() => adminPass === 'FAP2026' ? setView('admin') : alert('Clave incorrecta')}
+            className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold"
+          >
+            Entrar
+          </button>
+          <button onClick={() => setView('welcome')} className="mt-4 text-slate-400 text-sm">Volver</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'test') {
+    const currentItem = ITEMS[currentStep];
+    const progress = ((currentStep + 1) / ITEMS.length) * 100;
+
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 md:p-8 flex flex-col items-center">
+        <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[500px]">
+          {/* Header */}
+          <div className="p-6 bg-slate-800 text-white">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-xs font-bold uppercase tracking-widest opacity-70">{currentItem.section}</span>
+              <span className="text-xs font-mono">{currentStep + 1} / {ITEMS.length}</span>
+            </div>
+            <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+              <div 
+                className="bg-orange-500 h-full transition-all duration-300" 
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Question */}
+          <div className="flex-1 p-8 flex flex-col justify-center text-center">
+            <h2 className="text-2xl md:text-3xl font-semibold text-slate-800 mb-12 leading-snug">
+              {currentItem.text}
+            </h2>
+
+            <div className="grid grid-cols-5 gap-2 md:gap-4 mb-8">
+              {[0, 1, 2, 3, 4].map((val) => (
+                <button
+                  key={val}
+                  onClick={() => handleResponse(currentItem.id, val)}
+                  className={`flex flex-col items-center p-3 md:p-5 rounded-2xl border-2 transition-all ${
+                    responses[currentItem.id] === val 
+                    ? 'border-orange-500 bg-orange-50 text-orange-700' 
+                    : 'border-slate-100 hover:border-slate-200 text-slate-400'
+                  }`}
+                >
+                  <span className="text-xl md:text-2xl font-bold">{val}</span>
+                  <span className="text-[10px] uppercase font-bold mt-1 hidden md:block">
+                    {val === 0 ? 'Nada' : val === 4 ? 'Mucho' : ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer Navigation */}
+          <div className="p-6 border-t border-slate-100 flex justify-between bg-slate-50">
+            <button 
+              disabled={currentStep === 0}
+              onClick={() => setCurrentStep(s => s - 1)}
+              className="flex items-center gap-1 text-slate-500 font-bold disabled:opacity-30"
+            >
+              <ChevronLeft className="w-5 h-5" /> Anterior
+            </button>
+            
+            {currentStep < ITEMS.length - 1 ? (
+              <button 
+                disabled={responses[currentItem.id] === undefined}
+                onClick={() => setCurrentStep(s => s + 1)}
+                className="bg-slate-800 text-white px-6 py-2 rounded-xl font-bold disabled:opacity-30 flex items-center gap-2"
+              >
+                Siguiente <ChevronRight className="w-5 h-5" />
+              </button>
+            ) : (
+              <button 
+                disabled={loading || responses[currentItem.id] === undefined}
+                onClick={submitTest}
+                className="bg-orange-600 text-white px-8 py-2 rounded-xl font-bold hover:shadow-lg transition-all flex items-center gap-2"
+              >
+                {loading ? 'Guardando...' : 'Finalizar'} <Send className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="mt-8 text-slate-400 text-xs text-center max-w-sm">
+          0 = Nada/Nunca | 1 = Poco/Rara vez | 2 = Algo/A veces | 3 = Bastante/Casi siempre | 4 = Mucho/Siempre
+        </p>
+      </div>
+    );
+  }
+
+  if (view === 'results') {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 md:p-8 flex flex-col items-center">
+        <div className="max-w-3xl w-full bg-white rounded-3xl shadow-xl p-8">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="bg-green-100 p-3 rounded-xl text-green-600">
+              <ClipboardCheck className="w-8 h-8" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800">Test Completado</h1>
+              <p className="text-slate-500 italic text-sm">"El fallo es parte del aprendizaje y no solo una derrota"</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            {finalScores?.map((s, idx) => {
+              const interpretation = getInterpretation(s.score);
+              return (
+                <div key={idx} className="p-5 rounded-2xl border border-slate-100 bg-slate-50">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-bold text-slate-700 text-sm uppercase tracking-tight">{s.name}</h3>
+                    <span className={`text-xs px-2 py-1 rounded-full font-bold ${interpretation.bg} ${interpretation.color}`}>
+                      {interpretation.text}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-black text-slate-900">{s.score}</span>
+                    <span className="text-slate-400 text-sm">/ 4.00</span>
+                  </div>
                 </div>
-            `;
-        };
+              );
+            })}
+          </div>
 
-        window.calculateResults = (ans) => {
-            const cats = [
-                {n:"Prep", ids:[1,2,3,4,5]}, {n:"CCR1", ids:[6,7,8,10,16,18]},
-                {n:"CCR2", ids:[4,5,9,11,17,19]}, {n:"Staff", ids:[12,13,14,15]}
-            ];
-            return cats.map(c => {
-                const total = c.ids.reduce((a, b) => {
-                    const item = ITEMS.find(i => i.id === b);
-                    const v = ans[b] || 0;
-                    return a + (item.inv ? (4 - v) : v);
-                }, 0);
-                return { name: c.n, score: (total / c.ids.length).toFixed(2) };
-            });
-        };
+          <div className="h-64 mb-8">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={finalScores}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" hide />
+                <YAxis domain={[0, 4]} ticks={[0, 1.34, 2.67, 4]} />
+                <Tooltip />
+                <Bar dataKey="score" radius={[8, 8, 0, 0]}>
+                  {finalScores?.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.score >= 2.67 ? '#16a34a' : entry.score >= 1.34 ? '#eab308' : '#dc2626'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-        window.loadData = async () => {
-            if (!db) return;
-            const q = query(collection(db, 'artifacts', getEnv('__app_id') || 'fap-est-26', 'public', 'data', 'responses'), orderBy('timestamp', 'desc'));
-            const snap = await getDocs(q);
-            const list = document.getElementById('data-list');
-            snap.forEach(doc => {
-                const d = doc.data();
-                list.innerHTML += `
-                    <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex justify-between items-center">
-                        <div>
-                            <p class="text-[10px] font-black text-slate-900 uppercase italic">${d.playerName}</p>
-                            <p class="text-[8px] font-bold text-slate-400 uppercase">${d.timestamp?.toDate().toLocaleDateString()}</p>
-                        </div>
-                        <div class="flex gap-1">
-                            ${d.scores.map(s => `<span class="text-[9px] font-black bg-white px-2 py-1 rounded border border-slate-100">${s.score}</span>`).join('')}
-                        </div>
-                    </div>
-                `;
-            });
-        };
+          <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
+            <h4 className="flex items-center gap-2 font-bold text-orange-800 mb-2">
+              <AlertCircle className="w-5 h-5" /> Recomendación General
+            </h4>
+            <p className="text-orange-700 text-sm leading-relaxed">
+              {finalScores?.[2].score < 2.0 
+                ? "Te cuesta reengancharte tras el error. Intenta usar la clave 'siguiente acción' y busca un contacto defensivo rápido para volver al juego." 
+                : "Muestras buena disponibilidad. Sigue reforzando tu resiliencia compartiendo este enfoque con tus compañeros."}
+            </p>
+          </div>
 
-        connectCloud();
-        render();
-    </script>
-</body>
-</html>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full mt-8 bg-slate-800 text-white py-4 rounded-xl font-bold"
+          >
+            Volver al Inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <div className="flex items-center gap-3">
+              <LayoutDashboard className="w-8 h-8 text-slate-800" />
+              <h1 className="text-2xl font-bold">Panel de Datos CFEB-FAP</h1>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setView('welcome')} className="px-4 py-2 bg-white border rounded-lg text-sm font-medium">Salir</button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 border-b">
+                <tr>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Jugador</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase">Fecha</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase text-center">Pre-partido</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase text-center">CCR1 (Menos es mejor*)</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase text-center">CCR2</th>
+                  <th className="p-4 text-xs font-bold text-slate-500 uppercase text-center">Entrenador</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allResults.map((res) => (
+                  <tr key={res.id} className="border-b hover:bg-slate-50">
+                    <td className="p-4 font-bold text-slate-700">{res.playerId}</td>
+                    <td className="p-4 text-xs text-slate-400">{new Date(res.timestamp).toLocaleDateString()}</td>
+                    {res.results.map((score, i) => (
+                      <td key={i} className="p-4 text-center">
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${getInterpretation(score.score).bg} ${getInterpretation(score.score).color}`}>
+                          {score.score}
+                        </span>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {allResults.length === 0 && (
+              <div className="p-12 text-center text-slate-400">No hay datos registrados todavía.</div>
+            )}
+          </div>
+          
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div className="bg-white p-6 rounded-2xl shadow-sm border flex items-center gap-4">
+                <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><User /></div>
+                <div>
+                  <div className="text-sm text-slate-500 font-medium">Total Sesiones</div>
+                  <div className="text-2xl font-bold">{allResults.length}</div>
+                </div>
+             </div>
+             <div className="bg-white p-6 rounded-2xl shadow-sm border flex items-center gap-4">
+                <div className="bg-green-100 p-3 rounded-lg text-green-600"><TrendingUp /></div>
+                <div>
+                  <div classNa
