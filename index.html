@@ -48,33 +48,48 @@
     </div>
 
     <script type="module">
-        // Importaciones necesarias de Firebase CDN
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, serverTimestamp, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- SISTEMA DE DETECCIÓN DE CONFIGURACIÓN (Vercel Fix) ---
         let db = null;
         let auth = null;
         let currentUser = null;
         
-        // Intentamos obtener las variables de múltiples fuentes
+        // --- MOTOR DE DIAGNÓSTICO ---
         const getEnv = (key) => {
+            // Vercel inyecta variables en process.env, pero en el navegador 
+            // a veces necesitamos que el build las exponga. 
+            // Si usas Vercel con HTML plano, asegúrate de que se llamen exactamente así.
             return window[key] || (typeof process !== 'undefined' ? process.env[key] : null);
         };
 
         async function connectCloud() {
             const configValue = getEnv('__firebase_config');
-            const appId = getEnv('__app_id') || 'fap-estudiantes-anon';
+            const appId = getEnv('__app_id') || 'fap-estudiantes-2026';
+
+            // Timeout de seguridad: si en 6 segundos no hay respuesta, avisamos.
+            const timeout = setTimeout(() => {
+                if (!currentUser) updateBadge("Timeout: Revisa Vercel", "bg-orange-400");
+            }, 6000);
 
             if (!configValue) {
-                updateBadge("ERROR: No Config", "bg-red-500");
-                console.error("No se detectó la variable __firebase_config en Vercel.");
+                updateBadge("Falta Configuración", "bg-red-500");
+                showErrorInView("No se detectan las variables de entorno en Vercel. Asegúrate de haber añadido __firebase_config y __app_id en Settings > Environment Variables y haber hecho un 'Redeploy'.");
                 return;
             }
 
             try {
-                const config = typeof configValue === 'string' ? JSON.parse(configValue) : configValue;
+                // Intentamos parsear el JSON (Vercel a veces lo entrega con comillas extra)
+                let config;
+                try {
+                    config = typeof configValue === 'string' ? JSON.parse(configValue.trim()) : configValue;
+                } catch (e) {
+                    // Si falla el parseo, probamos a limpiar posibles comillas exteriores
+                    const cleaned = configValue.replace(/^['"]|['"]$/g, '');
+                    config = JSON.parse(cleaned);
+                }
+
                 const app = initializeApp(config);
                 auth = getAuth(app);
                 db = getFirestore(app);
@@ -83,24 +98,44 @@
                 onAuthStateChanged(auth, (user) => {
                     currentUser = user;
                     if (user) {
+                        clearTimeout(timeout);
                         updateBadge("Cloud Online", "bg-green-500");
+                        if(state.view === 'intro') render(); // Refrescar para quitar posibles errores
                     }
                 });
             } catch (err) {
-                updateBadge("ERROR Conexión", "bg-orange-500");
-                console.error("Fallo crítico al conectar con Firebase:", err);
+                updateBadge("Error Firebase", "bg-red-600");
+                showErrorInView("Error de conexión: " + err.message);
+                console.error(err);
             }
         }
 
         function updateBadge(text, colorClass) {
             const dot = document.getElementById('status-dot');
             const txt = document.getElementById('status-text');
-            dot.className = `w-2 h-2 rounded-full ${colorClass} ${colorClass.includes('green') ? 'animate-pulse' : ''}`;
-            txt.innerText = text;
-            txt.className = `text-[9px] font-black uppercase tracking-wider ${colorClass.replace('bg-', 'text-')}`;
+            if(dot && txt) {
+                dot.className = `w-2 h-2 rounded-full ${colorClass} ${colorClass.includes('green') ? 'animate-pulse' : ''}`;
+                txt.innerText = text;
+                txt.className = `text-[9px] font-black uppercase tracking-wider ${colorClass.replace('bg-', 'text-')}`;
+            }
         }
 
-        // --- DEFINICIÓN DE ÍTEMS (Cuestionario Científico) ---
+        function showErrorInView(msg) {
+            const container = document.getElementById('view-container');
+            container.innerHTML = `
+                <div class="flex-grow flex flex-col justify-center items-center text-center p-4 slide-up">
+                    <div class="bg-red-50 p-6 rounded-[2rem] border border-red-100 space-y-4">
+                        <i data-lucide="alert-triangle" class="w-10 h-10 text-red-500 mx-auto"></i>
+                        <h3 class="font-black text-red-900 uppercase italic">Error de Sistema</h3>
+                        <p class="text-xs text-red-700 font-bold leading-relaxed">${msg}</p>
+                        <button onclick="location.reload()" class="bg-red-500 text-white text-[10px] font-black px-6 py-3 rounded-2xl uppercase tracking-widest">Reintentar</button>
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        // --- LÓGICA DE LA APP (IDEM ANTERIOR) ---
         const ITEMS = [
             { id: 1, text: "Antes del partido me siento preparado emocionalmente para competir", cat: "PREP" },
             { id: 2, text: "Antes de jugar pienso mucho en no cometer errores", cat: "PREP", inv: true },
@@ -125,37 +160,29 @@
 
         let state = { view: 'intro', player: '', current: 0, answers: {} };
 
-        // --- SISTEMA DE NAVEGACIÓN ---
         const render = () => {
             const container = document.getElementById('view-container');
+            if (container.querySelector('.bg-red-50')) return; // No pisar el error si existe
+            
             container.innerHTML = '';
-
             if (state.view === 'intro') {
                 container.innerHTML = `
                     <div class="flex-grow flex flex-col justify-center items-center text-center space-y-12 slide-up pt-10">
                         <div class="space-y-4">
-                            <div class="bg-blue-50 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto border border-blue-100 rotate-3 shadow-xl">
-                                <i data-lucide="microscope" class="w-10 h-10 text-blue-900 -rotate-3"></i>
+                            <div class="bg-blue-50 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto border border-blue-100 shadow-xl">
+                                <i data-lucide="microscope" class="w-10 h-10 text-blue-900"></i>
                             </div>
-                            <h2 class="text-3xl font-black text-slate-900 italic tracking-tighter">PROTOCOLO FAP</h2>
-                            <p class="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] px-10">Recogida de Datos Científicos</p>
+                            <h2 class="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">Protocolo FAP</h2>
+                            <p class="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] px-10 italic">Investigación CB Estudiantes</p>
                         </div>
-                        
                         <div class="w-full space-y-6">
-                            <div class="text-left space-y-2">
-                                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Identificación del Jugador</label>
-                                <input type="text" id="input-name" placeholder="Nombre completo o ID" 
-                                    class="w-full p-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:border-blue-900 focus:bg-white outline-none font-bold text-center transition-all shadow-inner">
-                            </div>
-                            <button id="btn-start" class="tap-active w-full bg-blue-950 text-white font-black py-5 rounded-3xl shadow-2xl flex items-center justify-center gap-4 uppercase text-xs tracking-[0.2em] active:bg-blue-700">
-                                Iniciar Test <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                            <input type="text" id="input-name" placeholder="Nombre o ID del Jugador" 
+                                class="w-full p-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:border-blue-900 outline-none font-bold text-center transition-all shadow-inner">
+                            <button id="btn-start" class="tap-active w-full bg-blue-950 text-white font-black py-5 rounded-3xl shadow-2xl flex items-center justify-center gap-4 uppercase text-xs tracking-[0.2em]">
+                                Empezar <i data-lucide="chevron-right" class="w-5 h-5"></i>
                             </button>
-                            <p class="text-[9px] text-slate-300 font-bold uppercase tracking-widest">Tus respuestas serán tratadas de forma confidencial.</p>
                         </div>
-
-                        <button id="btn-admin" class="text-[9px] font-black text-slate-200 uppercase tracking-widest hover:text-blue-900 py-4 mt-auto">
-                            Acceso Historial <i data-lucide="key" class="w-3 h-3 inline ml-1"></i>
-                        </button>
+                        <button id="btn-admin" class="text-[9px] font-black text-slate-300 uppercase tracking-widest hover:text-blue-900">Historial Staff <i data-lucide="lock" class="w-2.5 h-2.5 inline ml-1"></i></button>
                     </div>
                 `;
                 document.getElementById('btn-start').onclick = () => {
@@ -165,155 +192,86 @@
                 };
                 document.getElementById('btn-admin').onclick = () => { state.view = 'admin'; render(); };
             } 
-            
             else if (state.view === 'quiz') {
                 const item = ITEMS[state.current];
-                const progress = (state.current / ITEMS.length) * 100;
                 container.innerHTML = `
                     <div class="slide-up">
-                        <div class="flex justify-between items-center mb-10">
-                            <div class="space-y-1">
-                                <span class="text-[10px] font-black text-blue-700 uppercase tracking-widest block">${state.player}</span>
-                                <span class="text-[8px] text-slate-300 font-bold uppercase tracking-widest italic">Pregunta ${state.current + 1} de 19</span>
-                            </div>
-                            <div class="relative flex items-center justify-center">
-                                <svg class="w-12 h-12 transform -rotate-90">
-                                    <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" fill="transparent" class="text-slate-100" />
-                                    <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="3" fill="transparent" class="text-blue-900" 
-                                        stroke-dasharray="125.6" stroke-dashoffset="${125.6 - (progress/100)*125.6}" />
-                                </svg>
-                                <span class="absolute text-[9px] font-black text-slate-400">${Math.round(progress)}%</span>
-                            </div>
+                        <div class="flex justify-between items-center mb-8">
+                            <span class="text-[10px] font-black text-blue-800 uppercase italic tracking-widest">${state.player}</span>
+                            <span class="text-[10px] text-slate-300 font-bold uppercase tracking-widest">${state.current + 1} / 19</span>
                         </div>
-
-                        <div class="min-h-[140px] flex items-center mb-12">
-                            <h3 class="text-2xl font-black text-slate-800 leading-tight italic">"${item.text}"</h3>
-                        </div>
-
+                        <h3 class="text-2xl font-black text-slate-800 leading-tight italic mb-10">"${item.text}"</h3>
                         <div class="grid gap-3">
-                            ${[
-                                {v:0, t:"Nunca / Nada"},
-                                {v:1, t:"Rara vez / Poco"},
-                                {v:2, t:"A veces / Regular"},
-                                {v:3, t:"A menudo / Bastante"},
-                                {v:4, t:"Siempre / Mucho"}
-                            ].map(opt => `
-                                <button onclick="window.saveOption(${opt.v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left font-bold flex justify-between items-center hover:border-blue-900 hover:bg-blue-50 transition-all shadow-sm">
-                                    <span class="text-slate-600 text-sm font-bold uppercase tracking-wide">${opt.t}</span>
-                                    <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-[10px] text-slate-300">${opt.v}</div>
+                            ${[0, 1, 2, 3, 4].map(v => `
+                                <button onclick="window.saveOption(${v})" class="tap-active w-full p-5 rounded-2xl border-2 border-slate-50 bg-white text-left font-bold flex justify-between items-center hover:border-blue-900 shadow-sm transition-all">
+                                    <span class="text-slate-600 text-sm font-bold uppercase tracking-wide">
+                                        ${v === 0 ? 'Nunca' : v === 4 ? 'Siempre' : v === 2 ? 'A veces' : 'Nivel ' + v}
+                                    </span>
+                                    <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-[10px] text-slate-300 font-black">${v}</div>
                                 </button>
                             `).join('')}
                         </div>
                     </div>
                 `;
             }
-
             else if (state.view === 'results') {
-                const summary = window.calculateResults(state.answers);
-                container.innerHTML = `
-                    <div class="slide-up space-y-6 pb-10">
-                        <div class="bg-blue-950 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
-                            <div class="absolute top-0 right-0 p-8 opacity-10">
-                                <i data-lucide="check-circle" class="w-24 h-24"></i>
-                            </div>
-                            <h4 class="text-blue-400 font-black text-[10px] uppercase tracking-[0.3em] mb-4">Análisis Terminado</h4>
-                            <h3 class="text-3xl font-black tracking-tighter mb-8 italic">${state.player}</h3>
-                            
-                            <div class="space-y-5 pt-8 border-t border-white/10">
-                                ${summary.map(s => `
-                                    <div class="space-y-1.5">
-                                        <div class="flex justify-between items-center text-[9px] font-black uppercase tracking-widest">
-                                            <span class="opacity-40">${s.name}</span>
-                                            <span class="${s.color}">${s.level} (${s.score})</span>
-                                        </div>
-                                        <div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden shadow-inner">
-                                            <div class="h-full ${s.bg} rounded-full" style="width: ${(s.score/4)*100}%"></div>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-
-                        <div class="bg-white p-6 rounded-3xl border border-slate-100 flex gap-4 shadow-xl">
-                            <div class="bg-green-50 p-3 rounded-2xl h-fit border border-green-100 text-green-600">
-                                <i data-lucide="cloud-upload" class="w-6 h-6"></i>
-                            </div>
-                            <div class="space-y-1">
-                                <p class="text-[10px] font-black text-slate-800 uppercase tracking-widest">Sincronización Cloud</p>
-                                <p class="text-[11px] text-slate-400 font-bold leading-relaxed">Tus respuestas han sido enviadas para el análisis de investigación del CB Estudiantes.</p>
-                            </div>
-                        </div>
-
-                        <button onclick="location.reload()" class="tap-active w-full bg-slate-900 text-white font-black py-5 rounded-3xl uppercase text-xs tracking-widest shadow-lg">Finalizar Sesión</button>
-                    </div>
-                `;
+                container.innerHTML = `<div class="py-20 text-center font-black italic uppercase text-slate-400">Enviando a la nube...</div>`;
+                window.finishTest();
             }
-
             else if (state.view === 'admin') {
-                container.innerHTML = `
-                    <div class="slide-up flex flex-col h-full space-y-6">
-                        <div class="flex justify-between items-center">
-                            <h2 class="text-2xl font-black tracking-tight italic">DATA STAFF</h2>
-                            <div class="flex gap-2">
-                                <button id="btn-csv" class="bg-green-600 text-white p-3 rounded-2xl shadow-lg"><i data-lucide="file-down" class="w-5 h-5"></i></button>
-                                <button onclick="window.go('intro')" class="bg-slate-100 text-slate-400 p-3 rounded-2xl"><i data-lucide="x" class="w-5 h-5"></i></button>
-                            </div>
-                        </div>
-                        <div id="data-list" class="flex-grow space-y-3 overflow-y-auto no-scrollbar pb-10">
-                            <div class="py-20 text-center text-slate-300 italic text-sm font-bold uppercase tracking-widest">Consultando registros...</div>
-                        </div>
-                    </div>
-                `;
+                container.innerHTML = `<div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-black italic">HISTORIAL</h2>
+                    <button onclick="window.go('intro')" class="text-slate-400"><i data-lucide="x"></i></button>
+                </div><div id="data-list" class="space-y-4"></div>`;
                 window.loadData();
-                document.getElementById('btn-csv').onclick = () => window.exportCSV();
             }
-
             lucide.createIcons();
         };
 
-        // --- FUNCIONALIDADES AUXILIARES ---
         window.go = (v) => { state.view = v; render(); };
-        window.saveOption = async (val) => {
+        window.saveOption = (val) => {
             state.answers[ITEMS[state.current].id] = val;
-            if (state.current < ITEMS.length - 1) {
-                state.current++; render();
-            } else {
-                state.view = 'results';
-                render();
-                // Persistencia automática
-                if (db && currentUser) {
-                    try {
-                        const results = window.calculateResults(state.answers);
-                        await addDoc(collection(db, 'artifacts', getEnv('__app_id') || 'fap-est-26', 'public', 'data', 'responses'), {
-                            playerName: state.player,
-                            timestamp: serverTimestamp(),
-                            scores: results,
-                            raw: state.answers,
-                            uid: currentUser.uid
-                        });
-                    } catch (e) { console.error("Error al guardar:", e); }
-                }
+            if (state.current < ITEMS.length - 1) { state.current++; render(); }
+            else { state.view = 'results'; render(); }
+        };
+
+        window.finishTest = async () => {
+            const results = window.calculateResults(state.answers);
+            if (db && currentUser) {
+                try {
+                    await addDoc(collection(db, 'artifacts', getEnv('__app_id') || 'fap-est-26', 'public', 'data', 'responses'), {
+                        playerName: state.player,
+                        timestamp: serverTimestamp(),
+                        scores: results,
+                        raw: state.answers,
+                        uid: currentUser.uid
+                    });
+                } catch (e) { console.error(e); }
             }
+            document.getElementById('view-container').innerHTML = `
+                <div class="slide-up space-y-6 text-center py-10">
+                    <div class="bg-blue-950 p-10 rounded-[3rem] text-white shadow-2xl">
+                        <h4 class="text-blue-400 font-black text-[10px] uppercase tracking-widest mb-4">Completado</h4>
+                        <h3 class="text-2xl font-black italic mb-6 uppercase tracking-tighter">${state.player}</h3>
+                        <p class="text-xs font-bold text-blue-200 leading-relaxed uppercase tracking-widest">Tus datos han sido registrados correctamente en la investigación.</p>
+                    </div>
+                    <button onclick="location.reload()" class="w-full py-5 bg-slate-900 text-white font-black rounded-3xl uppercase text-xs tracking-widest">Finalizar</button>
+                </div>
+            `;
         };
 
         window.calculateResults = (ans) => {
-            const data = {};
-            ITEMS.forEach(it => {
-                const v = ans[it.id] || 0;
-                data[it.id] = it.inv ? (4 - v) : v;
-            });
             const cats = [
-                {n:"Preparación", ids:[1,2,3,4,5]},
-                {n:"CCR1 (Bloqueo)", ids:[6,7,8,10,16,18]},
-                {n:"CCR2 (Disponibilidad)", ids:[4,5,9,11,17,19]},
-                {n:"Feedback Staff", ids:[12,13,14,15]}
+                {n:"Prep", ids:[1,2,3,4,5]}, {n:"CCR1", ids:[6,7,8,10,16,18]},
+                {n:"CCR2", ids:[4,5,9,11,17,19]}, {n:"Staff", ids:[12,13,14,15]}
             ];
             return cats.map(c => {
-                const avg = c.ids.reduce((a, b) => a + data[b], 0) / c.ids.length;
-                let lvl = "Bajo", clr = "text-red-400", bg = "bg-red-500";
-                if(avg >= 1.34) { lvl = "Medio"; clr = "text-orange-400"; bg = "bg-orange-500"; }
-                if(avg >= 2.67) { lvl = "Alto"; clr = "text-green-400"; bg = "bg-green-500"; }
-                return { name: c.n, score: avg.toFixed(2), level: lvl, color: clr, bg: bg };
+                const total = c.ids.reduce((a, b) => {
+                    const item = ITEMS.find(i => i.id === b);
+                    const v = ans[b] || 0;
+                    return a + (item.inv ? (4 - v) : v);
+                }, 0);
+                return { name: c.n, score: (total / c.ids.length).toFixed(2) };
             });
         };
 
@@ -322,5 +280,24 @@
             const q = query(collection(db, 'artifacts', getEnv('__app_id') || 'fap-est-26', 'public', 'data', 'responses'), orderBy('timestamp', 'desc'));
             const snap = await getDocs(q);
             const list = document.getElementById('data-list');
-            list.innerHTML = '';
-            if (sn
+            snap.forEach(doc => {
+                const d = doc.data();
+                list.innerHTML += `
+                    <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex justify-between items-center">
+                        <div>
+                            <p class="text-[10px] font-black text-slate-900 uppercase italic">${d.playerName}</p>
+                            <p class="text-[8px] font-bold text-slate-400 uppercase">${d.timestamp?.toDate().toLocaleDateString()}</p>
+                        </div>
+                        <div class="flex gap-1">
+                            ${d.scores.map(s => `<span class="text-[9px] font-black bg-white px-2 py-1 rounded border border-slate-100">${s.score}</span>`).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+        };
+
+        connectCloud();
+        render();
+    </script>
+</body>
+</html>
